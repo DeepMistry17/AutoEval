@@ -1,0 +1,45 @@
+# =========================================
+# 1. ENVIRONMENT VARIABLES (CRITICAL)
+# =========================================
+.env
+*.env
+sakec-refine-dashboard/frontend/.env
+sakec-refine-dashboard/backend/.env
+
+# =========================================
+# 2. DOCKER VOLUMES & LIVE DATA (CRITICAL)
+# =========================================
+postgres_data/
+n8n_data/
+n8n-files/
+.n8n-files/
+shared_n8n_files/
+appsmith_data/
+
+# =========================================
+# 3. NODE DEPENDENCIES
+# =========================================
+node_modules/
+sakec-refine-dashboard/frontend/node_modules/
+sakec-refine-dashboard/backend/node_modules/
+npm-debug.log
+yarn-error.log
+
+# =========================================
+# 4. FRONTEND BUILD ARTIFACTS
+# =========================================
+sakec-refine-dashboard/frontend/dist/
+sakec-refine-dashboard/frontend/build/
+
+# =========================================
+# 5. DATA SCIENCE & TEMP DIRECTORIES
+# =========================================
+# Keeping Jupyter checkpoint histories and model weights out of source control
+.ipynb_checkpoints/
+SLM/
+Temp/
+dummyui/
+
+# OS Generated
+.DS_Store
+Thumbs.db

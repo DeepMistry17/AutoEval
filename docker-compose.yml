@@ -1,0 +1,125 @@
+version: '3.3'
+
+networks:
+  sakec_net:
+    driver: bridge
+
+services:
+  # 1. THE DATABASE (PostgreSQL)
+  postgres:
+    image: postgres:15-alpine
+    container_name: sakec_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    networks:
+      - sakec_net
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+
+  # 2. THE LOGIC ENGINE (n8n)
+  n8n:
+    image: n8nio/n8n
+    container_name: sakec_n8n
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_SECURE_COOKIE=false
+      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=false
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - TZ=Asia/Kolkata
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - WEBHOOK_URL=https://untyrannical-annalee-unsinged.ngrok-free.dev
+      - NODES_EXCLUDE=[]
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./n8n-files:/home/node/n8n-files
+      - ./.n8n-files:/home/node/.n8n-files
+    depends_on:
+      - postgres
+    networks:
+      - sakec_net
+
+  # 3. THE OCR ENGINE (Tesseract API / Tika)
+  ocr:
+    image: apache/tika:latest-full
+    container_name: sakec_ocr
+    restart: always
+    ports:
+      - "9998:9998"
+    networks:
+      - sakec_net
+
+  # 4. THE SECURE TUNNEL (Ngrok)
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: sakec_ngrok
+    restart: always
+    command:
+      - "http"
+      - "--url=https://untyrannical-annalee-unsinged.ngrok-free.dev"
+      - "--log=stdout"
+      - "n8n:5678"
+    environment:
+      - NGROK_AUTHTOKEN=39ycGR22tQTJSJj6DstdNeM2272_4YvJv5UdeQMXWpSkK12Tj
+    networks:
+      - sakec_net
+
+  # 5. THE DOCUMENT CONVERTER (Gotenberg)
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: sakec_gotenberg
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    networks:
+      - sakec_net
+
+  
+  # --- SAKEC REFINE DASHBOARD BACKEND ---
+  sakec-api:
+    build: ./sakec-refine-dashboard/backend
+    container_name: sakec-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file: .env
+    volumes:                                
+      - ./.n8n-files:/shared_n8n_files      
+    networks:
+      - sakec_net
+    depends_on:
+      - postgres
+
+  # --- SAKEC REFINE DASHBOARD FRONTEND ---
+  sakec-frontend:
+    build:
+      context: ./sakec-refine-dashboard/frontend
+      args:
+        #- VITE_API_URL=http://172.16.151.3:3001/api
+        - VITE_API_URL=http://localhost:3001/api
+        - VITE_AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+        - VITE_AZURE_TENANT_ID=${AZURE_TENANT_ID}
+        #- VITE_AZURE_REDIRECT_URI=http://172.16.151.3:8081
+        - VITE_AZURE_REDIRECT_URI=http://localhost:8081
+    container_name: sakec-frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    networks:
+      - sakec_net
+    depends_on:
+      - sakec-api
