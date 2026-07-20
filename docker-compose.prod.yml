@@ -1,0 +1,106 @@
+networks:
+  sakec_net:
+    external: true  # Connects directly to the existing sandbox network
+    name: sakec-project_sakec_net
+
+services:
+  # PRODUCTION LOGIC ENGINE (n8n)
+  n8n-prod:
+    image: n8nio/n8n
+    container_name: sakec_n8n_prod  # Unique name
+    restart: always
+    ports:
+      - "5679:5678"                 # Shifted port so it doesn't clash with dev (5678)
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      - N8N_SECURE_COOKIE=false
+      - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=false
+      - WEBHOOK_URL=https://markify.sakec.ac.in/
+      - N8N_BLOCK_EXECUTE_COMMAND=false
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_HOST=postgres        # <-- REVERT THIS BACK TO "postgres"
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_POSTGRESDB_SCHEMA=n8n_prod        # <-- REVERT THIS BACK TO "n8n_prod"
+      - NODES_EXCLUDE=[]
+    volumes:
+      - /home/grading-storage/n8n_data:/home/node/.n8n
+      - /home/grading-storage/n8n-files:/home/node/.n8n-files
+    networks:
+      - sakec_net
+
+  # PRODUCTION BACKEND
+  sakec-api-prod:
+    build: ./sakec-refine-dashboard/backend
+    container_name: sakec-api-prod  # Unique name
+    restart: unless-stopped
+    ports:
+      - "3002:3001"                 # Production backend runs on 3002
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file: .env
+    environment:                     
+      - DB_SCHEMA=${DB_SCHEMA}               # Changed from "sakec_prod"
+    volumes:                                 
+      - /home/grading-storage/n8n-files:/shared_n8n_files      
+    depends_on:
+      - n8n-prod
+    networks:
+      - sakec_net
+
+  # PRODUCTION FRONTEND
+  sakec-frontend-prod:
+    build:
+      context: ./sakec-refine-dashboard/frontend
+      args:
+        - VITE_API_URL=${VITE_API_URL}
+        - VITE_AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
+        - VITE_AZURE_TENANT_ID=${AZURE_TENANT_ID}
+        - VITE_AZURE_REDIRECT_URI=${VITE_AZURE_REDIRECT_URI}
+    container_name: sakec-frontend-prod  # Unique name
+    restart: unless-stopped
+    ports:
+      - "8082:80"                   # Production frontend runs on 8082
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - sakec-api-prod
+    networks:
+      - sakec_net
+
+  # LOCAL INFERENCE ENGINE (Ollama)
+  ollama-prod:
+    image: ollama/ollama:latest
+    container_name: sakec_ollama_prod
+    restart: always
+    logging:                        # ?? Added log rotation (AI logs can get massive!)
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - /home/grading-storage/ollama_data:/root/.ollama
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - sakec_net
