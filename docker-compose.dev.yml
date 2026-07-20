@@ -1,6 +1,7 @@
 networks:
   sakec_net:
-    driver: bridge
+    external: true
+    name: sakec-project_sakec_net
 
 services:
   # 1. THE DATABASE (PostgreSQL)

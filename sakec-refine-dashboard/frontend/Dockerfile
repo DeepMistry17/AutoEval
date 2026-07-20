@@ -1,20 +1,24 @@
 # Build stage
 FROM node:20-alpine AS build
 
+WORKDIR /app
+
+# 1. Lock in the cache: Copy packages and install FIRST
+COPY package*.json ./
+RUN npm install --legacy-peer-deps
+
+# 2. Inject Variables AFTER the install so they don't break the cache
 ARG VITE_API_URL
 ARG VITE_AZURE_CLIENT_ID
 ARG VITE_AZURE_TENANT_ID
 ARG VITE_AZURE_REDIRECT_URI
 
-# Fixed: Now mapping all build arguments to the build environment correctly
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_AZURE_CLIENT_ID=$VITE_AZURE_CLIENT_ID
 ENV VITE_AZURE_TENANT_ID=$VITE_AZURE_TENANT_ID
 ENV VITE_AZURE_REDIRECT_URI=$VITE_AZURE_REDIRECT_URI
 
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --legacy-peer-deps
+# 3. Copy the rest of the code and build
 COPY . .
 RUN npm run build
 
