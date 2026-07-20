@@ -1,3 +1,4 @@
+const schema = process.env.DB_SCHEMA || 'sakec';
 const { Router } = require('express');
 const pool = require('../config/db');
 const {
@@ -109,7 +110,7 @@ router.post('/sync', async (req, res, next) => {
       return res.status(200).json({ message: 'No teams selected for sync.', count: 0 });
     }
 
-    const teacherRecord = await pool.query('SELECT teacher_id FROM sakec.teachers WHERE ms_email = $1', [req.user.email]);
+    const teacherRecord = await pool.query(`SELECT teacher_id FROM ${schema}.teachers WHERE ms_email = $1`, [req.user.email]);
     if (teacherRecord.rowCount === 0) {
       return res.status(404).json({ error: 'Your account is not properly registered.' });
     }
@@ -119,7 +120,7 @@ router.post('/sync', async (req, res, next) => {
     for (const cls of teamsToSave) {
       // 1. Insert or Update the Team itself (Removed teacher_id)
       await pool.query(`
-        INSERT INTO sakec.teams (team_id, subject_name, semester, academic_year, status)
+        INSERT INTO ${schema}.teams (team_id, subject_name, semester, academic_year, status)
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (team_id) 
         DO UPDATE SET 
@@ -131,7 +132,7 @@ router.post('/sync', async (req, res, next) => {
 
       // 2. Link the Teacher to the Team in the junction table
       await pool.query(`
-        INSERT INTO sakec.teacher_teams (teacher_id, team_id)
+        INSERT INTO ${schema}.teacher_teams (teacher_id, team_id)
         VALUES ($1, $2)
         ON CONFLICT (teacher_id, team_id) DO NOTHING;
       `, [trueTeacherId, cls.id]);

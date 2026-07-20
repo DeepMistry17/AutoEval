@@ -1,8 +1,9 @@
+
 import { Modal, Typography, Divider, Tag, Spin, Table } from 'antd';
 import { useEffect, useState } from 'react';
 
 const { Text } = Typography;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../../config/constants';
 
 interface SubmissionRecord {
   submission_id: number | string;
@@ -25,7 +26,7 @@ interface Props {
 // --- PARSER FUNCTION FOR THE AI MARKS BREAKDOWN ---
 const parseFeedback = (rawText: string) => {
   if (!rawText) return { breakdown: [], overall: 'No feedback provided.' };
-  
+
   const lines = rawText.split('\n');
   const breakdown: any[] = [];
   let overall = '';
@@ -41,7 +42,7 @@ const parseFeedback = (rawText: string) => {
       overall += '\n' + line;
       return;
     }
-    
+
     // Regex to match: "- Category (Score/Max): Comment"
     const match = line.match(/-\s*(.*?)\s*\(([\d.]+)\/([\d.]+)\):\s*(.*)/);
     if (match) {
@@ -136,24 +137,24 @@ export const ReviewModal = ({ open, record, onClose }: Props) => {
     },
   ];
 
- return (
+  return (
     <Modal
       title={<span style={{ color: '#e5e5e5', fontSize: '16px' }}>Reviewing: {record.full_name}</span>}
       open={open}
       onCancel={onClose}
       footer={null}
-      width={1100} 
+      width={1100}
       centered
       closeIcon={<span style={{ color: '#a3a3a3', fontSize: '18px' }}>✖</span>}
       styles={{
         // Removed the problematic 'content' tag entirely to fix TS2353
-        header: { 
-          background: 'transparent', 
-          borderBottom: '1px solid #262626', 
+        header: {
+          background: 'transparent',
+          borderBottom: '1px solid #262626',
           paddingBottom: '16px',
-          marginBottom: '16px' 
+          marginBottom: '16px'
         },
-        body: { padding: 0 }, 
+        body: { padding: 0 },
       }}
     >
       <div style={{ padding: '0 8px' }}>
@@ -164,9 +165,9 @@ export const ReviewModal = ({ open, record, onClose }: Props) => {
           </div>
         ) : (!record.local_converted_path && record.file_path?.match(/\.(mp4|zip|rar|exe|mp3|wav|avi|mov)$/i)) ? (
           <div style={{ height: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a', borderRadius: 8, marginBottom: 16, color: '#737373', border: '1px solid #262626' }}>
-             <span style={{ fontSize: '24px', marginBottom: '8px' }}>📎</span>
-             <Text style={{ color: '#a3a3a3' }}>Unsupported File Type</Text>
-             <Text type="secondary" style={{ fontSize: '12px', marginTop: '4px' }}>This file cannot be previewed. Please download it directly from MS Teams.</Text>
+            <span style={{ fontSize: '24px', marginBottom: '8px' }}>📎</span>
+            <Text style={{ color: '#a3a3a3' }}>Unsupported File Type</Text>
+            <Text type="secondary" style={{ fontSize: '12px', marginTop: '4px' }}>This file cannot be previewed. Please download it directly from MS Teams.</Text>
           </div>
         ) : (
           <div style={{ borderRadius: 8, overflow: 'hidden', border: '1px solid #262626', marginBottom: 16, minHeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
@@ -184,7 +185,7 @@ export const ReviewModal = ({ open, record, onClose }: Props) => {
 
         {/* AI Feedback Section */}
         <div style={{ background: '#1f1f1f', borderRadius: 8, padding: 20, border: '1px solid #262626' }}>
-          
+
           {/* Top Score Tags */}
           <div style={{ display: 'flex', gap: 24, marginBottom: 20 }}>
             <div>
@@ -205,12 +206,12 @@ export const ReviewModal = ({ open, record, onClose }: Props) => {
           {breakdown.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <Text strong style={{ color: '#a3a3a3', fontSize: 13, display: 'block', marginBottom: 8 }}>Marks Breakdown</Text>
-              <Table 
-                dataSource={breakdown} 
-                columns={columns} 
-                pagination={false} 
-                size="small" 
-                bordered 
+              <Table
+                dataSource={breakdown}
+                columns={columns}
+                pagination={false}
+                size="small"
+                bordered
                 className="dark-table-override"
               />
             </div>
@@ -223,12 +224,12 @@ export const ReviewModal = ({ open, record, onClose }: Props) => {
           <div
             style={{
               padding: 16,
-              background: '#0a0a0a', 
+              background: '#0a0a0a',
               borderRadius: 8,
               border: '1px solid #262626',
               lineHeight: 1.7,
               fontSize: 14,
-              color: '#e5e5e5', 
+              color: '#e5e5e5',
               whiteSpace: 'pre-wrap',
             }}
           >

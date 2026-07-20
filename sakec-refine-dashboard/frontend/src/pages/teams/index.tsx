@@ -17,7 +17,7 @@ import {
 import { useCustom } from '@refinedev/core';
 
 const { Title, Text } = Typography;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../config/constants';
 
 interface TeamRow {
   Subject: string;
@@ -28,7 +28,7 @@ interface TeamRow {
 
 export const TeamsPage = () => {
   const [archiveTarget, setArchiveTarget] = useState<TeamRow | null>(null);
-  
+
   // States for our new Selective Sync feature
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -54,7 +54,7 @@ export const TeamsPage = () => {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!resp.ok) throw new Error('Failed to fetch preview');
-      
+
       const data = await resp.json();
       setPreviewTeams(data);
       setSelectedRowKeys([]); // Reset selections
@@ -84,12 +84,12 @@ export const TeamsPage = () => {
         },
         body: JSON.stringify({ selectedTeamIds: selectedRowKeys }), // Sending only checked IDs
       });
-      
+
       if (!resp.ok) throw new Error('Failed to sync teams');
-      
+
       message.success('Successfully synced selected teams!');
       setIsSyncModalOpen(false);
-      query.refetch(); 
+      query.refetch();
     } catch {
       message.error('Failed to sync teams from Microsoft.');
     } finally {
@@ -171,10 +171,10 @@ export const TeamsPage = () => {
         width={600}
         footer={[
           <Button key="cancel" onClick={() => setIsSyncModalOpen(false)}>Cancel</Button>,
-          <Button 
-            key="submit" 
-            type="primary" 
-            loading={isSyncing} 
+          <Button
+            key="submit"
+            type="primary"
+            loading={isSyncing}
             onClick={handleConfirmSync}
             disabled={selectedRowKeys.length === 0}
             style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', border: 'none' }}

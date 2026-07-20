@@ -1,5 +1,9 @@
+const schema = process.env.DB_SCHEMA || 'sakec';
 const { Router } = require('express');
 const pool = require('../config/db');
+const ExcelJS = require('exceljs'); // <-- NEW
+const path = require('path');       // <-- NEW
+const { EXPORT_ASSIGNMENT_DATA } = require('../utils/queries'); // <-- NEW
 
 const router = Router();
 
@@ -13,10 +17,10 @@ router.get('/', async (req, res, next) => {
 
     let queryText = `
       SELECT DISTINCT a.assignment_id, a.title, a.team_id
-      FROM sakec.assignments a
-      JOIN sakec.teams t ON a.team_id = t.team_id
-      JOIN sakec.teacher_teams tt ON t.team_id = tt.team_id
-      JOIN sakec.teachers th ON tt.teacher_id = th.teacher_id
+      FROM ${schema}.assignments a
+      JOIN ${schema}.teams t ON a.team_id = t.team_id
+      JOIN ${schema}.teacher_teams tt ON t.team_id = tt.team_id
+      JOIN ${schema}.teachers th ON tt.teacher_id = th.teacher_id
       WHERE th.ms_email = $1 AND a.is_archived = false
     `;
     let queryValues = [email];
@@ -46,9 +50,9 @@ router.post('/sync', async (req, res, next) => {
 
     // 1. Fetch Active Teams
     const teamsRes = await pool.query(`
-      SELECT t.team_id, t.subject_name FROM sakec.teams t
-      JOIN sakec.teacher_teams tt ON t.team_id = tt.team_id
-      JOIN sakec.teachers th ON tt.teacher_id = th.teacher_id
+      SELECT t.team_id, t.subject_name FROM ${schema}.teams t
+      JOIN ${schema}.teacher_teams tt ON t.team_id = tt.team_id
+      JOIN ${schema}.teachers th ON tt.teacher_id = th.teacher_id
       WHERE th.MS_email = $1 
       AND t.status = 'active'
       AND ($2::text IS NULL OR t.team_id = $2)
@@ -82,7 +86,7 @@ router.post('/sync', async (req, res, next) => {
     }
 
     // 3. Retrieve True MS ID
-    const teacherCheck = await pool.query(`SELECT ms_id FROM sakec.teachers WHERE ms_email = $1`, [email]);
+    const teacherCheck = await pool.query(`SELECT ms_id FROM ${schema}.teachers WHERE ms_email = $1`, [email]);
     const trueMsId = teacherCheck.rows[0]?.ms_id;
 
     if (!trueMsId) {
@@ -121,14 +125,18 @@ router.post('/sync', async (req, res, next) => {
               // (Large Language Models are excellent at reading raw JSON strings!)
               const rubricData = msAssignment.rubric ? JSON.stringify(msAssignment.rubric) : null;
 
-              // FIX 3: Add your rubric column to the INSERT query (Assuming your DB column is named `rubric` or `rubric_content`)
+              // --- NEW: Extract the total maximum marks from the MS Assignment grading object ---
+              const totalMarks = msAssignment.grading?.maxPoints || 10;
+
+              // FIX 3: Add your rubric AND total_marks column to the INSERT query
               await pool.query(`
-                INSERT INTO sakec.assignments (assignment_id, team_id, ms_assignment_id, title, description, due_date, is_archived, rubric)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO ${schema}.assignments (assignment_id, team_id, ms_assignment_id, title, description, due_date, is_archived, rubric_context, total_marks)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (assignment_id) DO UPDATE SET 
                   title = EXCLUDED.title, 
                   due_date = EXCLUDED.due_date,
-                  rubric = EXCLUDED.rubric;
+                  rubric_context = EXCLUDED.rubric_context,
+                  total_marks = EXCLUDED.total_marks;
               `, [
                 msAssignment.id, 
                 team.team_id, 
@@ -137,7 +145,8 @@ router.post('/sync', async (req, res, next) => {
                 msAssignment.instructions?.content || '', 
                 msAssignment.dueDateTime || null, 
                 false,
-                rubricData // <-- Pushing the stringified rubric to the DB!
+                rubricData, // <-- Pushing the stringified rubric to the DB!
+                totalMarks  // <-- Pushing the dynamic max marks to the DB!
               ]);
               assignmentsSynced++;
             }
@@ -187,7 +196,7 @@ router.post('/sync', async (req, res, next) => {
           const tempPrn = `MS_${student.id.substring(0,8)}`; 
           
           await pool.query(`
-            INSERT INTO sakec.students (prn, microsoft_id, full_name, ms_email)
+            INSERT INTO ${schema}.students (prn, microsoft_id, full_name, ms_email)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (microsoft_id) DO UPDATE SET 
               full_name = EXCLUDED.full_name,
@@ -200,7 +209,7 @@ router.post('/sync', async (req, res, next) => {
           ]);
 
           await pool.query(`
-            INSERT INTO sakec.team_students (team_id, microsoft_id)
+            INSERT INTO ${schema}.team_students (team_id, microsoft_id)
             VALUES ($1, $2)
             ON CONFLICT DO NOTHING;
           `, [team.team_id, student.id]);
@@ -228,7 +237,7 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
 
     // CHANGE 1: Fetch both team_id AND due_date from the assignments table
     const assignRes = await pool.query(
-      `SELECT team_id, due_date FROM sakec.assignments WHERE assignment_id = $1`,
+      `SELECT team_id, due_date FROM ${schema}.assignments WHERE assignment_id = $1`,
       [assignmentId]
     );
 
@@ -275,17 +284,17 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
           
           if (studentMsId) {
             const tempPrn = `MS_${studentMsId.substring(0,8)}`;
-            const uniqueDummyEmail = `pending_${studentMsId.substring(0,8)}@sakec.edu`;
+            const uniqueDummyEmail = `pending_${studentMsId.substring(0,8)}@${schema}.edu`;
             
             await pool.query(`
-              INSERT INTO sakec.students (prn, microsoft_id, full_name, ms_email)
+              INSERT INTO ${schema}.students (prn, microsoft_id, full_name, ms_email)
               VALUES ($1, $2, $3, $4)
               ON CONFLICT (microsoft_id) DO NOTHING;
             `, [tempPrn, studentMsId, 'Student (Pending Roster)', uniqueDummyEmail]);
 
             // === THE FIX: Fetch the REAL PRN from the database ===
             const studentLookup = await pool.query(
-              `SELECT prn FROM sakec.students WHERE microsoft_id = $1`, 
+              `SELECT prn FROM ${schema}.students WHERE microsoft_id = $1`, 
               [studentMsId]
             );
             
@@ -322,20 +331,48 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
               isLate = submissionTime > dueDate;
             }
 
-            // CHANGE 3: Inject is_late and strictly protect the status column from overwrites
+            // CHANGE 3: Upsert logic with Timestamp Comparison for Resubmissions
             await pool.query(`
-              INSERT INTO sakec.submissions (submission_id, assignment_id, prn, submission_time, status, file_path, is_late)
+              INSERT INTO ${schema}.submissions (submission_id, assignment_id, prn, submission_time, status, file_path, is_late)
               VALUES ($1, $2, $3, $4, $5, $6, $7)
               ON CONFLICT (submission_id) 
               DO UPDATE SET 
-                submission_time = EXCLUDED.submission_time,
-                file_path = EXCLUDED.file_path,
-                is_late = EXCLUDED.is_late,
+                -- 1. Reset Status to Pending if a newer file is detected
                 status = CASE 
-                            WHEN sakec.submissions.status IN ('Graded', 'Synced') 
-                            Then sakec.submissions.status 
-                            ELSE EXCLUDED.status 
-                         END;
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN 'Pending' 
+                  ELSE ${schema}.submissions.status 
+                END,
+                -- 2. Update File URLs
+                file_path = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.file_path 
+                  ELSE ${schema}.submissions.file_path 
+                END,
+                -- 3. Nullify old AI data to ensure a clean slate for the new evaluation
+                ai_suggested_marks = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                  ELSE ${schema}.submissions.ai_suggested_marks 
+                END,
+                final_marks = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                  ELSE ${schema}.submissions.final_marks 
+                END,
+                ai_feedback = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                  ELSE ${schema}.submissions.ai_feedback 
+                END,
+                local_converted_path = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                  ELSE ${schema}.submissions.local_converted_path 
+                END,
+                -- 4. Update the late flag and timestamp
+                is_late = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.is_late 
+                  ELSE ${schema}.submissions.is_late 
+                END,
+                submission_time = CASE 
+                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.submission_time 
+                  ELSE ${schema}.submissions.submission_time 
+                END;
             `, [
               submission.id,
               assignmentId,
@@ -355,10 +392,14 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
     // --- NEW: FIRE THE n8n STARTING GUN ---------------------------------------
     // We intentionally do not 'await' this fetch. We want n8n to start grading
     // in the background while the Node server instantly responds to the React UI.
+    // --- GENERALIZED: FIRE THE n8n STARTING GUN ---------------------------------------
     if (syncedCount > 0) {
       console.log('?? Firing n8n starting gun for grading queue...');
-      // Using your local IP and n8n's default port 5678
-      fetch('http://172.16.151.3:5678/webhook/trigger-evaluation', {
+      
+      // Dynamically uses the N8N url from your .env file
+      const n8nUrl = process.env.N8N_INTERNAL_URL || 'http://localhost:5678';
+      
+      fetch(`${n8nUrl}/webhook/trigger-evaluation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'start_queue' })
@@ -425,7 +466,6 @@ router.get('/view-file', async (req, res, next) => {
   }
 });
 // --- NEW: Local PDF Server Route ---
-const path = require('path');
 const fs = require('fs');
 
 router.get('/local-pdf', (req, res) => {
@@ -454,6 +494,143 @@ router.get('/local-pdf', (req, res) => {
   } catch (error) {
     console.error('Error serving local PDF:', error);
     res.status(500).send('Failed to serve local PDF.');
+  }
+});
+/**
+ * GET /api/assignments/:assignmentId/export
+ * Dynamically generates a richly formatted Excel file with a logo header.
+ */
+router.get('/:assignmentId/export', async (req, res, next) => {
+  try {
+    const { assignmentId } = req.params;
+    const records = await pool.query(EXPORT_ASSIGNMENT_DATA, [assignmentId]);
+
+    if (records.rowCount === 0) {
+      return res.status(404).json({ error: 'No submissions found for this assignment.' });
+    }
+
+    // 1. Create a new Excel Workbook and Sheet
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Grades');
+
+    // 2. Parse the data and identify all dynamic parameters
+    let processedRows = [];
+    let dynamicColumnsSet = new Set();
+
+    records.rows.forEach(row => {
+      
+      // Calculate Points and Percentage
+      const points = row.final_marks !== null ? row.final_marks : row.ai_suggested_marks;
+      const maxPoints = row.total_marks || 10;
+      const percentage = points !== null ? Math.round((points / maxPoints) * 100) + '%' : '0%';
+
+      // Base row data mapped to your requested columns
+      let parsedRow = {
+        rollNo: row.roll_no || '',
+        fullName: row.full_name,
+        prn: row.prn || '',
+        email: row.ms_email,
+        dueDate: row.due_date ? new Date(row.due_date).toLocaleDateString() : '',
+        status: row.is_late ? "Late" : "On Time",
+        points: points,
+        maxPoints: maxPoints,
+        percentage: percentage
+      };
+
+      // 3. Regex Magic: Unpack the dynamic AI parameters from the text block
+      if (row.ai_feedback) {
+        const paramRegex = /- (.*?) \((.*?)\/(.*?)\): \[(.*?)\] (.*)/g;
+        let match;
+        while ((match = paramRegex.exec(row.ai_feedback)) !== null) {
+          const paramName = match[1].trim();
+          const paramScore = parseFloat(match[2]);
+          const paramFeedback = match[5].trim();
+
+          dynamicColumnsSet.add(paramName); // Track this column globally
+          
+          parsedRow[paramName] = paramScore;
+          parsedRow[`${paramName} Feedback`] = paramFeedback;
+        }
+      }
+      processedRows.push(parsedRow);
+    });
+
+    // 4. Build the Excel Headers dynamically (New Layout & Order)
+    const dynamicColumns = Array.from(dynamicColumnsSet);
+    
+    let excelColumns = [
+      { header: 'Sr No.', key: 'rollNo', width: 10 },
+      { header: 'Full Name', key: 'fullName', width: 25 },
+      { header: 'PRN', key: 'prn', width: 20 },
+      { header: 'Email Address', key: 'email', width: 30 },
+      { header: 'Due Date', key: 'dueDate', width: 15 },
+      { header: 'Status', key: 'status', width: 15 },
+      { header: 'Points', key: 'points', width: 10 },
+      { header: 'Max Points', key: 'maxPoints', width: 12 },
+      { header: 'Percentage', key: 'percentage', width: 12 },
+    ];
+
+    dynamicColumns.forEach(col => {
+      excelColumns.push({ header: col, key: col, width: 15 });
+      excelColumns.push({ header: `Feedback ${col}`, key: `${col} Feedback`, width: 40 });
+    });
+
+    // 5. Assign columns first 
+    worksheet.columns = excelColumns; 
+
+    // 6. Push the headers down and inject the Dynamic Title!
+    const dynamicTitle = `${records.rows[0].assignment_name} - ${records.rows[0].team_name}`;
+    worksheet.spliceRows(1, 0,
+        [], 
+        [], 
+        [], 
+        [dynamicTitle], // Places your dynamic title in Column A
+        []
+    );
+
+    // 7. Center and Style the Title (Merge Columns A through I)
+    worksheet.mergeCells('A4:I4'); // Increased to I to span the new columns nicely
+    const titleCell = worksheet.getCell('A4');
+    titleCell.font = { size: 16, bold: true };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // 8. Style the Header Row (now safely pushed to Row 6)
+    const headerRow = worksheet.getRow(6);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } }; // Blue background
+
+    // 9. Add the Logo (Shifted to the center)
+    try {
+      const logoId = workbook.addImage({
+        filename: path.join(__dirname, '../assets/sakec_logo.png'), 
+        extension: 'png',
+      });
+      
+      worksheet.addImage(logoId, {
+        // Change col: 0 to col: 2 or 3 to push it towards the center!
+        // (col: 2 starts the image at Column C. col: 3 starts it at Column D)
+        tl: { col: 2, row: 0 }, 
+        ext: { width: 400, height: 80 }
+      });
+    } catch (imgErr) {
+      console.warn("Logo not found or could not be loaded.", imgErr.message);
+    }
+
+    // 10. Add the Data Rows
+    processedRows.forEach(data => {
+      worksheet.addRow(data);
+    });
+
+    // 11. Send the file to the frontend
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${records.rows[0].assignment_name}_Grades.xlsx"`);
+    
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (err) {
+    console.error('Excel Export Error:', err);
+    next(err);
   }
 });
 

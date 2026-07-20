@@ -1,6 +1,6 @@
 import type { DataProvider } from '@refinedev/core';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from './config/constants';
 
 function getHeaders(): HeadersInit {
   const token = sessionStorage.getItem('access_token');

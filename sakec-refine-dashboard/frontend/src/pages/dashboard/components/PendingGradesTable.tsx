@@ -3,7 +3,7 @@ import { EyeOutlined, SaveOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { useState } from 'react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../../config/constants';
 
 interface PendingGrade {
   submission_id: number;
@@ -54,7 +54,7 @@ export const PendingGradesTable = ({ assignmentId, onReview, onRefresh }: Props)
 
       if (!resp.ok) throw new Error('Failed to sync');
       message.success('Marks synced successfully');
-      
+
       setEditedMarks((prev) => {
         const copy = { ...prev };
         delete copy[record.submission_id];
@@ -75,7 +75,7 @@ export const PendingGradesTable = ({ assignmentId, onReview, onRefresh }: Props)
   const columns = [
     {
       title: 'Roll.no',
-      dataIndex: 'roll_no', 
+      dataIndex: 'roll_no',
       key: 'roll_no',
       width: 80,
       align: 'center' as const,
@@ -114,7 +114,7 @@ export const PendingGradesTable = ({ assignmentId, onReview, onRefresh }: Props)
         // THE MAGIC TRICK: Default to AI Marks if 'val' is null!
         const currentVal = editedMarks[record.submission_id] ?? val ?? record.ai_suggested_marks;
         const diff = Math.abs(record.ai_suggested_marks - currentVal);
-        
+
         return (
           <InputNumber
             min={0}
@@ -158,7 +158,7 @@ export const PendingGradesTable = ({ assignmentId, onReview, onRefresh }: Props)
       render: (_: unknown, record: PendingGrade) => {
         const isEdited = editedMarks[record.submission_id] !== undefined;
         const isPendingSave = record.final_marks === null; // Needs its first save
-        
+
         return (
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
             <Button

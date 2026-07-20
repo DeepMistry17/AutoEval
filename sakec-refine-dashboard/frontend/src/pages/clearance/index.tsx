@@ -1,14 +1,15 @@
+
 import { useState, useEffect } from 'react';
 import { Typography, Select, Button, Table, Space, Layout } from 'antd';
 import { DownloadOutlined } from '@ant-design/icons';
-import { useCustom } from '@refinedev/core'; 
+import { useCustom } from '@refinedev/core';
 import GodViewDrawer from './components/GodViewDrawer';
 import ExportModal from './components/ExportModal';
 
 const { Content } = Layout;
 const { Title } = Typography;
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../config/constants';
 
 interface TeamDropdown {
   label: string;
@@ -20,7 +21,7 @@ export default function StudentClearancePage() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [exportModalVisible, setExportModalVisible] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState<any>(null);
-  
+
   const [rosterData, setRosterData] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -28,7 +29,7 @@ export default function StudentClearancePage() {
     url: '/teams/dropdown',
     method: 'get',
   });
-  
+
   const rawTeams = teamsResult?.data as unknown;
   const teams: TeamDropdown[] = Array.isArray(rawTeams) ? rawTeams : [];
 
@@ -36,7 +37,7 @@ export default function StudentClearancePage() {
     if (selectedTeam) {
       fetchRoster(selectedTeam);
     } else {
-      setRosterData([]); 
+      setRosterData([]);
     }
   }, [selectedTeam]);
 
@@ -44,7 +45,7 @@ export default function StudentClearancePage() {
     setLoading(true);
     try {
       const token = sessionStorage.getItem('access_token'); // Grab the security token
-      
+
       const res = await fetch(`${API_URL}/dashboard/team-roster?teamId=${teamId}`, {
         method: 'GET',
         headers: {
@@ -58,12 +59,12 @@ export default function StudentClearancePage() {
       }
 
       const data = await res.json();
-      
+
       const formattedData = data.map((student: any) => ({
         ...student,
-        key: student.prn 
+        key: student.prn
       }));
-      
+
       setRosterData(formattedData);
     } catch (error) {
       console.error("Failed to fetch roster:", error);
@@ -72,9 +73,9 @@ export default function StudentClearancePage() {
   };
   const columns = [
     { title: 'Roll No', dataIndex: 'roll_no', key: 'roll_no', width: 100 },
-    { 
-      title: 'Student Name', 
-      dataIndex: 'name', 
+    {
+      title: 'Student Name',
+      dataIndex: 'name',
       key: 'name',
       render: (text: string, record: any) => (
         <a onClick={() => openGodView(record)} style={{ fontWeight: 600, color: '#1677ff' }}>
@@ -94,15 +95,15 @@ export default function StudentClearancePage() {
   return (
     <Content style={{ padding: '24px', minHeight: '100vh', backgroundColor: '#141414' }}>
       <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <Title level={4} style={{ color: '#fff', margin: 0 }}>Student Clearance & Export</Title>
             <p style={{ color: '#8c8c8c', margin: 0 }}>Review term work and generate reports.</p>
           </div>
-          <Button 
-            type="primary" 
-            icon={<DownloadOutlined />} 
+          <Button
+            type="primary"
+            icon={<DownloadOutlined />}
             style={{ backgroundColor: '#52c41a' }}
             onClick={() => setExportModalVisible(true)}
             disabled={!selectedTeam}
@@ -112,7 +113,7 @@ export default function StudentClearancePage() {
         </div>
 
         <div style={{ backgroundColor: '#1f1f1f', padding: '16px', borderRadius: '8px' }}>
-          <Select 
+          <Select
             showSearch
             allowClear
             placeholder="Search Teams..."
@@ -124,26 +125,26 @@ export default function StudentClearancePage() {
           />
         </div>
 
-        <Table 
-          dataSource={rosterData} 
-          columns={columns} 
+        <Table
+          dataSource={rosterData}
+          columns={columns}
           loading={loading}
           pagination={false}
           style={{ backgroundColor: '#1f1f1f', borderRadius: '8px' }}
         />
       </Space>
 
-      <GodViewDrawer 
-        visible={drawerVisible} 
-        onClose={() => setDrawerVisible(false)} 
-        student={selectedStudent} 
-        teamId={selectedTeam} 
+      <GodViewDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+        student={selectedStudent}
+        teamId={selectedTeam}
       />
 
-      <ExportModal 
-        visible={exportModalVisible} 
-        onClose={() => setExportModalVisible(false)} 
-        teamId={selectedTeam} 
+      <ExportModal
+        visible={exportModalVisible}
+        onClose={() => setExportModalVisible(false)}
+        teamId={selectedTeam}
       />
     </Content>
   );

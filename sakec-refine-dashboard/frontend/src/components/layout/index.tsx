@@ -84,21 +84,21 @@ export const AppLayout = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: collapsed ? 'center' : 'flex-start' }}>
-            <div
-              style={{
-                width: 36, height: 36, borderRadius: 10,
-                background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18,
+            <img 
+              src="/sakec-logo.png" 
+              alt="Markify Logo" 
+              style={{ 
+                width: 80, 
+                height: 80, 
+                objectFit: 'contain',
                 flexShrink: 0 
-              }}
-            >
-              📊
-            </div>
+              }} 
+            />
             {!collapsed && (
               <div>
-                <Text strong style={{ color: '#e5e5e5', fontSize: 14 }}>SAKEC Grading</Text>
+                <Text strong style={{ color: '#e5e5e5', fontSize: 14 }}>Markify</Text>
                 <br />
-                <Text style={{ color: '#a3a3a3', fontSize: 11 }}>Teacher Dashboard</Text>
+                <Text style={{ color: '#a3a3a3', fontSize: 11 }}>AI Evaluator & Reminder System</Text>
               </div>
             )}
           </div>

@@ -8,7 +8,7 @@ interface GodViewDrawerProps {
   teamId: string | null;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../../config/constants';
 
 export default function GodViewDrawer({ visible, onClose, student, teamId }: GodViewDrawerProps) {
   const [data, setData] = useState([]);
@@ -24,7 +24,7 @@ export default function GodViewDrawer({ visible, onClose, student, teamId }: God
     setLoading(true);
     try {
       const token = sessionStorage.getItem('access_token');
-      
+
       const res = await fetch(`${API_URL}/dashboard/student-clearance?prn=${student.prn}&teamId=${teamId}`, {
         method: 'GET',
         headers: {
@@ -47,9 +47,9 @@ export default function GodViewDrawer({ visible, onClose, student, teamId }: God
 
   const columns = [
     { title: 'Assignment', dataIndex: 'assignment_title', key: 'assignment_title' },
-    { 
-      title: 'Status', 
-      dataIndex: 'status', 
+    {
+      title: 'Status',
+      dataIndex: 'status',
       key: 'status',
       render: (status: string) => {
         let color = status === 'Graded' ? 'green' : status === 'Missing' ? 'volcano' : 'blue';
@@ -73,11 +73,11 @@ export default function GodViewDrawer({ visible, onClose, student, teamId }: God
       {loading ? (
         <div style={{ textAlign: 'center', marginTop: '50px' }}><Spin size="large" /></div>
       ) : (
-        <Table 
-          dataSource={data} 
-          columns={columns} 
+        <Table
+          dataSource={data}
+          columns={columns}
           rowKey="assignment_id"
-          pagination={false} 
+          pagination={false}
         />
       )}
     </Drawer>

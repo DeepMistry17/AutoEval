@@ -22,6 +22,7 @@ const msalConfig: Configuration = {
 
 export const loginRequest = {
   scopes: [`api://${import.meta.env.VITE_AZURE_CLIENT_ID}/access_as_user`],
+  prompt: "select_account", // ?? ADD THIS LINE
 };
 
 export const msalInstance = new PublicClientApplication(msalConfig);

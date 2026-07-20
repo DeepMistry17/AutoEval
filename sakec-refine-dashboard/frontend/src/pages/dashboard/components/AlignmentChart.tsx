@@ -116,3 +116,4 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
     </Card>
   );
 };
+

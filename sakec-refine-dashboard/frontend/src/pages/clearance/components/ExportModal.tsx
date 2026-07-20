@@ -3,7 +3,7 @@ import { Modal, Button, Typography, Checkbox, Spin, message } from 'antd';
 import * as XLSX from 'xlsx';
 
 const { Text } = Typography;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../../config/constants';
 
 interface ExportModalProps {
   visible: boolean;
@@ -34,12 +34,12 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
       const res = await fetch(`${API_URL}/assignments?teamId=${teamId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       if (!res.ok) throw new Error("Failed to fetch assignments");
-      
+
       const data = await res.json();
       setAssignments(data);
-      
+
       // Auto-check all assignments by default for convenience
       setCheckedList(data.map((a: any) => a.assignment_id));
     } catch (error) {
@@ -59,7 +59,7 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
     setExporting(true);
     try {
       const token = sessionStorage.getItem('access_token');
-      
+
       // Hit the new POST route we just built in the backend
       const res = await fetch(`${API_URL}/dashboard/export`, {
         method: 'POST',
@@ -71,19 +71,19 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
       });
 
       if (!res.ok) throw new Error("Export request failed");
-      
+
       const rawData = await res.json();
 
       // 3. Data Transformation: Group the flat SQL data into Excel Rows
       // We map it by roll_no so each student gets exactly one row.
       const rowMap: Record<string, any> = {};
-      
+
       rawData.forEach((row: any) => {
         if (!rowMap[row.roll_no]) {
           // Initialize the row with the student's base information
-          rowMap[row.roll_no] = { 
-            'Roll No': row.roll_no, 
-            'Student Name': row.name 
+          rowMap[row.roll_no] = {
+            'Roll No': row.roll_no,
+            'Student Name': row.name
           };
         }
         // Dynamically add the assignment title as a column, and the mark as the cell value
@@ -97,10 +97,10 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
       const worksheet = XLSX.utils.json_to_sheet(excelData);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Term Clearance");
-      
+
       // Trigger the browser to download the file
-      XLSX.writeFile(workbook, `SAKEC_Term_Clearance_${teamId?.substring(0,8)}.xlsx`);
-      
+      XLSX.writeFile(workbook, `SAKEC_Term_Clearance_${teamId?.substring(0, 8)}.xlsx`);
+
       message.success("Excel file downloaded successfully!");
       onClose(); // Close the modal
     } catch (error) {
@@ -119,10 +119,10 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
         <Button key="cancel" onClick={onClose} disabled={exporting}>
           Cancel
         </Button>,
-        <Button 
-          key="export" 
-          type="primary" 
-          style={{ backgroundColor: '#52c41a' }} 
+        <Button
+          key="export"
+          type="primary"
+          style={{ backgroundColor: '#52c41a' }}
           onClick={handleExport}
           loading={exporting}
         >
@@ -134,15 +134,15 @@ export default function ExportModal({ visible, onClose, teamId }: ExportModalPro
       <Text style={{ color: '#fff', display: 'block', marginBottom: '16px' }}>
         Select the assignments you want to include as columns in the final Excel report.
       </Text>
-      
+
       {loading ? (
         <div style={{ textAlign: 'center', margin: '20px 0' }}>
           <Spin />
         </div>
       ) : (
-        <Checkbox.Group 
+        <Checkbox.Group
           style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}
-          value={checkedList} 
+          value={checkedList}
           onChange={(list) => setCheckedList(list as string[])}
         >
           {assignments.map(a => (

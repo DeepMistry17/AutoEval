@@ -1,125 +1,106 @@
-version: '3.3'
-
 networks:
   sakec_net:
-    driver: bridge
+    external: true  # Connects directly to the existing sandbox network
+    name: sakec-project_sakec_net
 
 services:
-  # 1. THE DATABASE (PostgreSQL)
-  postgres:
-    image: postgres:15-alpine
-    container_name: sakec_db
-    restart: always
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5433:5432"
-    networks:
-      - sakec_net
-    volumes:
-      - ./postgres_data:/var/lib/postgresql/data
-
-  # 2. THE LOGIC ENGINE (n8n)
-  n8n:
+  # PRODUCTION LOGIC ENGINE (n8n)
+  n8n-prod:
     image: n8nio/n8n
-    container_name: sakec_n8n
+    container_name: sakec_n8n_prod  # Unique name
     restart: always
     ports:
-      - "5678:5678"
+      - "5679:5678"                 # Shifted port so it doesn't clash with dev (5678)
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - N8N_SECURE_COOKIE=false
       - N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES=false
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+      - WEBHOOK_URL=https://markify.sakec.ac.in/
+      - N8N_BLOCK_EXECUTE_COMMAND=false
       - GENERIC_TIMEZONE=Asia/Kolkata
-      - TZ=Asia/Kolkata
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_HOST=postgres        # <-- REVERT THIS BACK TO "postgres"
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_USER=${POSTGRES_USER}
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
-      - WEBHOOK_URL=https://untyrannical-annalee-unsinged.ngrok-free.dev
+      - DB_POSTGRESDB_SCHEMA=n8n_prod        # <-- REVERT THIS BACK TO "n8n_prod"
       - NODES_EXCLUDE=[]
     volumes:
-      - ./n8n_data:/home/node/.n8n
-      - ./n8n-files:/home/node/n8n-files
-      - ./.n8n-files:/home/node/.n8n-files
-    depends_on:
-      - postgres
+      - /home/grading-storage/n8n_data:/home/node/.n8n
+      - /home/grading-storage/n8n-files:/home/node/.n8n-files
     networks:
       - sakec_net
 
-  # 3. THE OCR ENGINE (Tesseract API / Tika)
-  ocr:
-    image: apache/tika:latest-full
-    container_name: sakec_ocr
-    restart: always
-    ports:
-      - "9998:9998"
-    networks:
-      - sakec_net
-
-  # 4. THE SECURE TUNNEL (Ngrok)
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: sakec_ngrok
-    restart: always
-    command:
-      - "http"
-      - "--url=https://untyrannical-annalee-unsinged.ngrok-free.dev"
-      - "--log=stdout"
-      - "n8n:5678"
-    environment:
-      - NGROK_AUTHTOKEN=39ycGR22tQTJSJj6DstdNeM2272_4YvJv5UdeQMXWpSkK12Tj
-    networks:
-      - sakec_net
-
-  # 5. THE DOCUMENT CONVERTER (Gotenberg)
-  gotenberg:
-    image: gotenberg/gotenberg:8
-    container_name: sakec_gotenberg
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    networks:
-      - sakec_net
-
-  
-  # --- SAKEC REFINE DASHBOARD BACKEND ---
-  sakec-api:
+  # PRODUCTION BACKEND
+  sakec-api-prod:
     build: ./sakec-refine-dashboard/backend
-    container_name: sakec-api
+    container_name: sakec-api-prod  # Unique name
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3002:3001"                 # Production backend runs on 3002
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file: .env
-    volumes:                                
-      - ./.n8n-files:/shared_n8n_files      
+    environment:                     
+      - DB_SCHEMA=${DB_SCHEMA}               # Changed from "sakec_prod"
+    volumes:                                 
+      - /home/grading-storage/n8n-files:/shared_n8n_files      
+    depends_on:
+      - n8n-prod
     networks:
       - sakec_net
-    depends_on:
-      - postgres
 
-  # --- SAKEC REFINE DASHBOARD FRONTEND ---
-  sakec-frontend:
+  # PRODUCTION FRONTEND
+  sakec-frontend-prod:
     build:
       context: ./sakec-refine-dashboard/frontend
       args:
-        #- VITE_API_URL=http://172.16.151.3:3001/api
-        - VITE_API_URL=http://localhost:3001/api
+        - VITE_API_URL=${VITE_API_URL}
         - VITE_AZURE_CLIENT_ID=${AZURE_CLIENT_ID}
         - VITE_AZURE_TENANT_ID=${AZURE_TENANT_ID}
-        #- VITE_AZURE_REDIRECT_URI=http://172.16.151.3:8081
-        - VITE_AZURE_REDIRECT_URI=http://localhost:8081
-    container_name: sakec-frontend
+        - VITE_AZURE_REDIRECT_URI=${VITE_AZURE_REDIRECT_URI}
+    container_name: sakec-frontend-prod  # Unique name
     restart: unless-stopped
     ports:
-      - "8081:80"
+      - "8082:80"                   # Production frontend runs on 8082
+    logging:                        # ?? Added log rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - sakec-api-prod
     networks:
       - sakec_net
-    depends_on:
-      - sakec-api
+
+  # LOCAL INFERENCE ENGINE (Ollama)
+  ollama-prod:
+    image: ollama/ollama:latest
+    container_name: sakec_ollama_prod
+    restart: always
+    logging:                        # ?? Added log rotation (AI logs can get massive!)
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - /home/grading-storage/ollama_data:/root/.ollama
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - sakec_net

@@ -1,3 +1,4 @@
+const schema = process.env.DB_SCHEMA || 'sakec';
 const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
 
@@ -21,7 +22,7 @@ function getSigningKey(header, callback) {
  * Express middleware that:
  * 1. Validates the Azure AD JWT from the Authorization header
  * 2. Verifies the token's tenant ID (tid) matches AZURE_TENANT_ID
- * 3. Checks the email exists in sakec.teachers (NO auto-provisioning)
+ * 3. Checks the email exists in ${schema}.teachers (NO auto-provisioning)
  * 4. Attaches req.user = { email, name, teacherId }
  */
 async function authMiddleware(req, res, next) {
@@ -36,7 +37,7 @@ async function authMiddleware(req, res, next) {
   if (process.env.NODE_ENV === 'development' && token === 'dev-bypass-token') {
     const pool = require('../config/db');
     const { FIND_TEACHER_BY_EMAIL } = require('../utils/queries');
-    const devEmail = process.env.DEV_TEACHER_EMAIL || 'dev@sakec.ac.in';
+    const devEmail = process.env.DEV_TEACHER_EMAIL || 'dev@${schema}.ac.in';
 
     try {
       const result = await pool.query(FIND_TEACHER_BY_EMAIL, [devEmail]);
@@ -107,7 +108,7 @@ async function authMiddleware(req, res, next) {
         const trueUuid = decoded.oid; // Extract Microsoft Object ID from the token
 
         if (!currentMsId && trueUuid) {
-          await pool.query('UPDATE sakec.teachers SET ms_id = $1 WHERE ms_email = $2', [trueUuid, email]);
+          await pool.query(`UPDATE ${schema}.teachers SET ms_id = $1 WHERE ms_email = $2`, [trueUuid, email]);
           currentMsId = trueUuid;
           console.log(`[AUTH] Auto-healed ms_id for ${email} during login.`);
         }

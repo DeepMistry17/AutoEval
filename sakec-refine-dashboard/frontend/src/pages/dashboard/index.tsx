@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Typography, Select, Space, Divider, Card, Button, message } from 'antd';
-import { SyncOutlined, CloudDownloadOutlined } from '@ant-design/icons';
+import { SyncOutlined, CloudDownloadOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { KpiCards } from './components/KpiCards';
 import { PendingGradesTable } from './components/PendingGradesTable';
@@ -10,7 +10,7 @@ import { ReviewModal } from './components/ReviewModal';
 import { socket } from '../../utils/socket'; // <-- NEW: Imported the shared socket utility
 
 const { Title } = Typography;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../../config/constants';
 
 interface Assignment {
   title: string;
@@ -26,10 +26,11 @@ interface TeamDropdown {
 export const DashboardPage = () => {
   const [selectedTeam, setSelectedTeam] = useState<string | undefined>();
   const [selectedAssignment, setSelectedAssignment] = useState<string | undefined>();
-  
-  const [isSyncing, setIsSyncing] = useState(false); 
-  const [isSyncingSubmissions, setIsSyncingSubmissions] = useState(false); 
-  
+
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingSubmissions, setIsSyncingSubmissions] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
   const [reviewRecord, setReviewRecord] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -64,12 +65,12 @@ export const DashboardPage = () => {
     // 2. Listen for the exact signal name the backend is broadcasting
     socket.on('refresh_dashboard', () => {
       console.log('⚡ Live refresh signal received from n8n!');
-      
+
       // Show a toast notification to the teacher
       message.success('AI Evaluation Complete! Dashboard updated.');
-      
+
       // Instantly trigger your existing refresh function
-      handleRefresh(); 
+      handleRefresh();
     });
 
     // 3. Cleanup on unmount
@@ -92,13 +93,13 @@ export const DashboardPage = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(payload) 
+        body: JSON.stringify(payload)
       });
-      
+
       if (!resp.ok) throw new Error('Failed to sync assignments');
       const data = await resp.json();
       message.success(`Successfully fetched ${data.count} assignments and ${data.studentsCount} students!`);
-      assignmentsQuery.refetch(); 
+      assignmentsQuery.refetch();
     } catch {
       message.error('Failed to sync assignments from Microsoft.');
     } finally {
@@ -121,11 +122,57 @@ export const DashboardPage = () => {
       if (!resp.ok) throw new Error('Failed to sync submissions');
       const data = await resp.json();
       message.success(`Successfully pulled ${data.count} submissions ready for AI evaluation!`);
-      handleRefresh(); 
+      handleRefresh();
     } catch {
       message.error('Failed to fetch submissions.');
     } finally {
       setIsSyncingSubmissions(false);
+    }
+  };
+
+  const handleExportGrades = async () => {
+    if (!selectedAssignment) return;
+    setIsExporting(true);
+    try {
+      const token = sessionStorage.getItem('access_token');
+      const response = await fetch(`${API_URL}/assignments/${selectedAssignment}/export`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to export data');
+      }
+
+      // Convert the response to a Blob (raw file data)
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+
+      // Try to extract the true filename from the backend headers, fallback to a default
+      const disposition = response.headers.get('Content-Disposition');
+      let filename = 'Grades_Export.xlsx';
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename="([^"]+)"/.exec(disposition);
+        if (matches != null && matches[1]) filename = matches[1];
+      }
+
+      // Trigger the hidden download link
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      message.success('Excel file downloaded successfully!');
+    } catch (error: any) {
+      message.error(error.message || 'Failed to export grades.');
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -176,7 +223,7 @@ export const DashboardPage = () => {
             >
               Update Assignments
             </Button>
-            
+
             <Button
               type="primary"
               icon={<CloudDownloadOutlined />}
@@ -187,13 +234,24 @@ export const DashboardPage = () => {
             >
               Fetch Submissions
             </Button>
+
+            <Button
+              type="primary"
+              icon={<FileExcelOutlined />}
+              onClick={handleExportGrades}
+              loading={isExporting}
+              disabled={!selectedAssignment}
+              style={{ borderRadius: 8, background: 'linear-gradient(135deg, #1d4ed8, #1e40af)', border: 'none', height: '40px' }}
+            >
+              Export Excel
+            </Button>
           </Space>
         </div>
       </Card>
 
       <div key={`kpi-${refreshKey}`}><KpiCards assignmentId={selectedAssignment} /></div>
       <Divider />
-      
+
       <Card title={<Title level={5} style={{ margin: 0 }}>Submissions Needing Review</Title>} style={{ borderRadius: 12, marginBottom: 20 }} bodyStyle={{ padding: '0 0 8px' }}>
         <div key={`grades-${refreshKey}`}>
           <PendingGradesTable assignmentId={selectedAssignment} onReview={setReviewRecord} onRefresh={handleRefresh} />
@@ -201,7 +259,7 @@ export const DashboardPage = () => {
       </Card>
 
       <div style={{ marginBottom: 20 }} key={`chart-${refreshKey}`}><AlignmentChart assignmentId={selectedAssignment} /></div>
-      
+
       <Card title={<Title level={5} style={{ margin: 0 }}>Student Summary</Title>} style={{ borderRadius: 12, marginBottom: 20 }} bodyStyle={{ padding: '0 0 8px' }}>
         <div key={`summary-${refreshKey}`}>
           <StudentSummaryTable assignmentId={selectedAssignment} />
@@ -212,3 +270,4 @@ export const DashboardPage = () => {
     </div>
   );
 };
+

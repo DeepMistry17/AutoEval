@@ -1,7 +1,7 @@
 import type { AuthProvider } from '@refinedev/core';
 import { msalInstance, loginRequest } from './config/msalConfig';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from './config/constants';
 
 export const authProvider: AuthProvider = {
   login: async () => {
