@@ -62,21 +62,6 @@ services:
     networks:
       - sakec_net
     
-  # 3. THE OCR ENGINE (Tesseract API / Tika)
-  ocr:
-    image: apache/tika:latest-full
-    container_name: sakec_ocr
-    restart: always
-    logging:                        # ?? Added log rotation
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    ports:
-      - "9998:9998"
-    networks:
-      - sakec_net
-    
   # THE MULTIMODAL DOCUMENT PARSER (IBM Docling CPU)
   docling:
     image: quay.io/docling-project/docling-serve-cpu:latest
