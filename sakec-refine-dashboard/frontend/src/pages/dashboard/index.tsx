@@ -266,7 +266,7 @@ export const DashboardPage = () => {
         </div>
       </Card>
 
-      <ReviewModal open={!!reviewRecord} record={reviewRecord} onClose={() => setReviewRecord(null)} />
+      <ReviewModal open={!!reviewRecord} record={reviewRecord} onClose={() => setReviewRecord(null)} onRefresh={handleRefresh} />
     </div>
   );
 };
