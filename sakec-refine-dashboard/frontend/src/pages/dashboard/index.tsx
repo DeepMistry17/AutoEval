@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Typography, Select, Space, Divider, Card, Button, message } from 'antd';
+import { Typography, Select, Space, Divider, Card, Button, message, Row, Col } from 'antd';
 import { SyncOutlined, CloudDownloadOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { KpiCards } from './components/KpiCards';
 import { PendingGradesTable } from './components/PendingGradesTable';
 import { AlignmentChart } from './components/AlignmentChart';
+import { ScoreDistributionChart } from './components/ScoreDistributionChart';
 import { StudentSummaryTable } from './components/StudentSummaryTable';
 import { ReviewModal } from './components/ReviewModal';
 import { socket } from '../../utils/socket'; // <-- NEW: Imported the shared socket utility
@@ -258,7 +259,14 @@ export const DashboardPage = () => {
         </div>
       </Card>
 
-      <div style={{ marginBottom: 20 }} key={`chart-${refreshKey}`}><AlignmentChart assignmentId={selectedAssignment} /></div>
+      <Row gutter={16} style={{ marginBottom: 20 }}>
+        <Col xs={24} lg={12} key={`chart-${refreshKey}`}>
+          <AlignmentChart assignmentId={selectedAssignment} />
+        </Col>
+        <Col xs={24} lg={12} key={`dist-${refreshKey}`}>
+          <ScoreDistributionChart assignmentId={selectedAssignment} />
+        </Col>
+      </Row>
 
       <Card title={<Title level={5} style={{ margin: 0 }}>Student Summary</Title>} style={{ borderRadius: 12, marginBottom: 20 }} bodyStyle={{ padding: '0 0 8px' }}>
         <div key={`summary-${refreshKey}`}>
