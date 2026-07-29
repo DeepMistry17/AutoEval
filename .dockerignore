@@ -1,0 +1,11 @@
+node_modules
+.git
+postgres_data
+docling_data
+n8n_data
+n8n-files
+.n8n-files
+sakec-refine-dashboard/frontend/node_modules
+sakec-refine-dashboard/backend/node_modules
+**/*.mp4
+**/*.png

@@ -25,12 +25,14 @@ services:
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
 
-  # 2. THE LOGIC ENGINE (n8n)
+# 2. THE LOGIC ENGINE (n8n with poppler-utils)
   n8n:
-    image: n8nio/n8n
+    build:
+      context: ./n8n-custom      # <-- Changed this line
+      dockerfile: Dockerfile     # <-- Changed this line
     container_name: sakec_n8n
     restart: always
-    logging:                        # ?? Added log rotation
+    logging:
       driver: "json-file"
       options:
         max-size: "10m"
@@ -53,6 +55,7 @@ services:
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
       - WEBHOOK_URL=https://untyrannical-annalee-unsinged.ngrok-free.dev
       - NODES_EXCLUDE=[]
+      - NODE_FUNCTION_ALLOW_BUILTIN=*
     volumes:
       - ./n8n_data:/home/node/.n8n
       - ./n8n-files:/home/node/n8n-files
@@ -160,3 +163,4 @@ services:
       - sakec_net
     depends_on:
       - sakec-api
+
