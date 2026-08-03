@@ -60,24 +60,29 @@ export const DashboardPage = () => {
     socket.connect();
 
     socket.on('connect', () => {
-      console.log('🟢 Connected to real-time grading stream. ID:', socket.id);
+      console.log('🟢 Connected to real-time database stream. ID:', socket.id);
     });
 
-    // 2. Listen for the exact signal name the backend is broadcasting
-    socket.on('refresh_dashboard', () => {
-      console.log('⚡ Live refresh signal received from n8n!');
+    // 2. Listen for the database notification payload
+    socket.on('refresh_dashboard', (payload?: { table?: string; action?: string }) => {
+      console.log('⚡ Real-time DB change event received:', payload);
 
-      // Show a toast notification to the teacher
-      message.success('AI Evaluation Complete! Dashboard updated.');
+      if (payload?.table === 'assignments') {
+        // Refetch the assignment dropdown list if new assignments were inserted
+        assignmentsQuery.refetch();
+        message.info('Assignment list updated!');
+      } else if (payload?.table === 'submissions') {
+        message.success('Submission status updated live!');
+      }
 
-      // Instantly trigger your existing refresh function
+      // Instantly trigger re-mount and refetch for all KPI cards, tables, and charts
       handleRefresh();
     });
 
     // 3. Cleanup on unmount
     return () => {
       socket.off('connect');
-      socket.off('refresh_dashboard'); // Make sure to update the cleanup too!
+      socket.off('refresh_dashboard');
       socket.disconnect();
     };
   }, []);
@@ -130,8 +135,8 @@ export const DashboardPage = () => {
       setLastSyncedAt(new Date());
       message.success(
         `Sync complete — ${assignData.count} assignments` +
-          (subCount ? `, ${subCount} submissions pulled` : '') +
-          '!',
+        (subCount ? `, ${subCount} submissions pulled` : '') +
+        '!',
       );
       handleRefresh();
     } catch {
@@ -241,7 +246,7 @@ export const DashboardPage = () => {
                   fontWeight: 500,
                 }}
               >
-                 Manual Sync
+                Manual Sync
               </Button>
               <span
                 style={{

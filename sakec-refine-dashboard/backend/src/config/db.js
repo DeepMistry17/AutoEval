@@ -16,4 +16,35 @@ pool.on('connect', (client) => {
   client.query(`SET search_path TO ${process.env.DB_SCHEMA || 'sakec'}, public`);
 });
 
+// --- NEW: Database Listener Function -----------------------------------------
+pool.setupDatabaseListener = async (io) => {
+  try {
+    // Check out a dedicated client from the pool that stays open permanently
+    const client = await pool.connect();
+    
+    // Subscribe to the PostgreSQL channel we created
+    await client.query('LISTEN dashboard_update_channel');
+    console.log('?? Connected to PostgreSQL LISTEN channel: dashboard_update_channel');
+
+    // Whenever PostgreSQL sends a notification, this event fires
+    client.on('notification', (msg) => {
+      if (msg.channel === 'dashboard_update_channel') {
+        const payload = JSON.parse(msg.payload);
+        console.log(`?? DB Change Detected on table [${payload.table}] - Action: ${payload.action}`);
+        
+        // Broadcast the refresh command to all connected React clients
+        io.emit('refresh_dashboard', payload);
+      }
+    });
+
+    // Handle potential client errors so the listener doesn't crash the server
+    client.on('error', (err) => {
+      console.error('Database listener error:', err);
+    });
+
+  } catch (err) {
+    console.error('Failed to setup database listener:', err);
+  }
+};
+
 module.exports = pool;

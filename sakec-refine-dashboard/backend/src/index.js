@@ -5,6 +5,9 @@ const cors = require('cors');
 const http = require('http'); 
 const { Server } = require('socket.io'); 
 
+// ─── NEW: Import the database pool ───────────────────────────────────────────
+const db = require('./config/db');
+
 const authMiddleware = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
 
@@ -38,6 +41,9 @@ io.on('connection', (socket) => {
 
 app.set('io', io);
 
+// ─── NEW: Initialize Database Listener ───────────────────────────────────────
+db.setupDatabaseListener(io);
+
 // ─── Middleware ──────────────────────────────────────────────────────────────
 app.use(express.json());
 
@@ -55,24 +61,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── n8n Webhook Receiver ────────────────────────────────────────────────────
-app.post('/api/webhook/n8n-graded', (req, res) => {
-  const { secret } = req.body;
-
-  // Uses variable instead of a hardcoded string token
-  if (secret !== process.env.N8N_WEBHOOK_SECRET) {
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
-
-  const globalIo = req.app.get('io');
-  
-  if (globalIo) {
-    globalIo.emit('refresh_dashboard');
-    console.log('⚡ Received finish signal from n8n. Broadcasted refresh command to UI.');
-  }
-
-  res.status(200).json({ success: true, message: 'UI refresh broadcasted' });
-});
+// ❌ DELETED: The /api/webhook/n8n-graded route has been removed. 
 
 // ─── Protected routes ───────────────────────────────────────────────────────
 app.use('/api/auth', authMiddleware, authRoutes);
