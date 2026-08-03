@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Typography, Select, Space, Divider, Card, Button, message, Row, Col } from 'antd';
-import { SyncOutlined, CloudDownloadOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { SyncOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { KpiCards } from './components/KpiCards';
 import { PendingGradesTable } from './components/PendingGradesTable';
@@ -28,9 +28,9 @@ export const DashboardPage = () => {
   const [selectedTeam, setSelectedTeam] = useState<string | undefined>();
   const [selectedAssignment, setSelectedAssignment] = useState<string | undefined>();
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isSyncingSubmissions, setIsSyncingSubmissions] = useState(false);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const [reviewRecord, setReviewRecord] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -82,52 +82,62 @@ export const DashboardPage = () => {
     };
   }, []);
   // ──────────────────────────────────────────────────────────────────
-  const handleSyncAssignments = async () => {
-    setIsSyncing(true);
-    try {
-      const token = sessionStorage.getItem('access_token');
-      const payload = selectedTeam ? { teamId: selectedTeam } : {};
-
-      const resp = await fetch(`${API_URL}/assignments/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!resp.ok) throw new Error('Failed to sync assignments');
-      const data = await resp.json();
-      message.success(`Successfully fetched ${data.count} assignments and ${data.studentsCount} students!`);
-      assignmentsQuery.refetch();
-    } catch {
-      message.error('Failed to sync assignments from Microsoft.');
-    } finally {
-      setIsSyncing(false);
-    }
+  // Helper to format the "Last synced" relative timestamp
+  const formatLastSynced = (date: Date | null): string => {
+    if (!date) return 'Never synced';
+    const diffMs = Date.now() - date.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    if (diffSec < 10) return 'Last synced: just now';
+    if (diffSec < 60) return `Last synced: ${diffSec}s ago`;
+    const diffMin = Math.floor(diffSec / 60);
+    if (diffMin < 60) return `Last synced: ${diffMin} min${diffMin > 1 ? 's' : ''} ago`;
+    const diffHr = Math.floor(diffMin / 60);
+    return `Last synced: ${diffHr} hr${diffHr > 1 ? 's' : ''} ago`;
   };
 
-  const handleSyncSubmissions = async () => {
-    if (!selectedAssignment) return;
-    setIsSyncingSubmissions(true);
+  const handleForceSync = async () => {
+    setIsForceSyncing(true);
     try {
       const token = sessionStorage.getItem('access_token');
-      const resp = await fetch(`${API_URL}/assignments/${selectedAssignment}/sync-submissions`, {
+      const headers = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      };
+
+      // Phase 1 – sync assignments (and student rosters)
+      const payload = selectedTeam ? { teamId: selectedTeam } : {};
+      const assignResp = await fetch(`${API_URL}/assignments/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers,
+        body: JSON.stringify(payload),
       });
-      if (!resp.ok) throw new Error('Failed to sync submissions');
-      const data = await resp.json();
-      message.success(`Successfully pulled ${data.count} submissions ready for AI evaluation!`);
+      if (!assignResp.ok) throw new Error('Failed to sync assignments');
+      const assignData = await assignResp.json();
+      assignmentsQuery.refetch();
+
+      // Phase 2 – sync submissions (only when an assignment is selected)
+      let subCount = 0;
+      if (selectedAssignment) {
+        const subResp = await fetch(
+          `${API_URL}/assignments/${selectedAssignment}/sync-submissions`,
+          { method: 'POST', headers },
+        );
+        if (!subResp.ok) throw new Error('Failed to sync submissions');
+        const subData = await subResp.json();
+        subCount = subData.count ?? 0;
+      }
+
+      setLastSyncedAt(new Date());
+      message.success(
+        `Sync complete — ${assignData.count} assignments` +
+          (subCount ? `, ${subCount} submissions pulled` : '') +
+          '!',
+      );
       handleRefresh();
     } catch {
-      message.error('Failed to fetch submissions.');
+      message.error('Force sync failed. Please try again.');
     } finally {
-      setIsSyncingSubmissions(false);
+      setIsForceSyncing(false);
     }
   };
 
@@ -214,27 +224,36 @@ export const DashboardPage = () => {
             </div>
           </Space>
 
-          <Space>
-            <Button
-              type="primary"
-              icon={<SyncOutlined spin={isSyncing} />}
-              onClick={handleSyncAssignments}
-              loading={isSyncing}
-              style={{ borderRadius: 8, background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', height: '40px' }}
-            >
-              Update Assignments
-            </Button>
-
-            <Button
-              type="primary"
-              icon={<CloudDownloadOutlined />}
-              onClick={handleSyncSubmissions}
-              loading={isSyncingSubmissions}
-              disabled={!selectedAssignment}
-              style={{ borderRadius: 8, background: 'linear-gradient(135deg, #f59e0b, #d97706)', border: 'none', height: '40px' }}
-            >
-              Fetch Submissions
-            </Button>
+          <Space size={12} align="center">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Button
+                type="default"
+                icon={<SyncOutlined spin={isForceSyncing} />}
+                onClick={handleForceSync}
+                loading={isForceSyncing}
+                disabled={!selectedTeam}
+                style={{
+                  borderRadius: 8,
+                  height: '40px',
+                  background: '#eaa008',
+                  border: '1.5px solid #eaa008',
+                  color: '#000000',
+                  fontWeight: 500,
+                }}
+              >
+                 Manual Sync
+              </Button>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: '#94a3b8',
+                  whiteSpace: 'nowrap',
+                  lineHeight: 1.2,
+                }}
+              >
+                {formatLastSynced(lastSyncedAt)}
+              </span>
+            </div>
 
             <Button
               type="primary"

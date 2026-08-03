@@ -26,6 +26,13 @@ function getSigningKey(header, callback) {
  * 4. Attaches req.user = { email, name, teacherId }
  */
 async function authMiddleware(req, res, next) {
+  // ── NEW: Bulletproof n8n Webhook Bypass ───────────────────────────────────
+  if (req.path.includes('/webhook/') || req.headers['x-n8n-secret'] === 'sakec_n8n_secret_2026') {
+    console.log(`[AUTH BYPASS] Letting n8n through for path: ${req.path}`);
+    return next();
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
