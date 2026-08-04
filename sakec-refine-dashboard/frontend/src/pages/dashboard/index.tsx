@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Typography, Select, Space, Divider, Card, Button, message, Row, Col } from 'antd';
 import { SyncOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
@@ -8,10 +8,10 @@ import { AlignmentChart } from './components/AlignmentChart';
 import { ScoreDistributionChart } from './components/ScoreDistributionChart';
 import { StudentSummaryTable } from './components/StudentSummaryTable';
 import { ReviewModal } from './components/ReviewModal';
-import { socket } from '../../utils/socket'; // <-- NEW: Imported the shared socket utility
+import { socket } from '../../utils/socket';
+import { API_URL } from '../../config/constants';
 
 const { Title } = Typography;
-import { API_URL } from '../../config/constants';
 
 interface Assignment {
   title: string;
@@ -35,6 +35,8 @@ export const DashboardPage = () => {
   const [reviewRecord, setReviewRecord] = useState<any>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const { query: assignmentsQuery, result: assignmentsResult } = useCustom<Assignment[]>({
     url: selectedTeam ? `/assignments?teamId=${selectedTeam}` : '/assignments',
     method: 'get',
@@ -54,40 +56,28 @@ export const DashboardPage = () => {
 
   const handleRefresh = () => setRefreshKey((k) => k + 1);
 
-  // ─── REAL-TIME WEBSOCKET LISTENER ──────────────────────────────
+  // ─── SILENT REFRESH LISTENER ──────────────────────────────────────────────
   useEffect(() => {
-    // 1. Open the connection
-    socket.connect();
+    const handleSilentRefresh = (payload?: { table?: string; action?: string }) => {
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
 
-    socket.on('connect', () => {
-      console.log('🟢 Connected to real-time database stream. ID:', socket.id);
-    });
+      refreshTimeoutRef.current = setTimeout(() => {
+        if (payload?.table === 'assignments') {
+          assignmentsQuery.refetch();
+        }
+        handleRefresh();
+      }, 1500);
+    };
 
-    // 2. Listen for the database notification payload
-    socket.on('refresh_dashboard', (payload?: { table?: string; action?: string }) => {
-      console.log('⚡ Real-time DB change event received:', payload);
+    socket.on('refresh_dashboard', handleSilentRefresh);
 
-      if (payload?.table === 'assignments') {
-        // Refetch the assignment dropdown list if new assignments were inserted
-        assignmentsQuery.refetch();
-        message.info('Assignment list updated!');
-      } else if (payload?.table === 'submissions') {
-        message.success('Submission status updated live!');
-      }
-
-      // Instantly trigger re-mount and refetch for all KPI cards, tables, and charts
-      handleRefresh();
-    });
-
-    // 3. Cleanup on unmount
     return () => {
-      socket.off('connect');
-      socket.off('refresh_dashboard');
-      socket.disconnect();
+      socket.off('refresh_dashboard', handleSilentRefresh);
+      if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
     };
   }, []);
-  // ──────────────────────────────────────────────────────────────────
-  // Helper to format the "Last synced" relative timestamp
+  // ──────────────────────────────────────────────────────────────────────────
+
   const formatLastSynced = (date: Date | null): string => {
     if (!date) return 'Never synced';
     const diffMs = Date.now() - date.getTime();
@@ -109,7 +99,6 @@ export const DashboardPage = () => {
         Authorization: `Bearer ${token}`,
       };
 
-      // Phase 1 – sync assignments (and student rosters)
       const payload = selectedTeam ? { teamId: selectedTeam } : {};
       const assignResp = await fetch(`${API_URL}/assignments/sync`, {
         method: 'POST',
@@ -117,27 +106,18 @@ export const DashboardPage = () => {
         body: JSON.stringify(payload),
       });
       if (!assignResp.ok) throw new Error('Failed to sync assignments');
-      const assignData = await assignResp.json();
+      await assignResp.json();
       assignmentsQuery.refetch();
 
-      // Phase 2 – sync submissions (only when an assignment is selected)
-      let subCount = 0;
       if (selectedAssignment) {
         const subResp = await fetch(
           `${API_URL}/assignments/${selectedAssignment}/sync-submissions`,
           { method: 'POST', headers },
         );
         if (!subResp.ok) throw new Error('Failed to sync submissions');
-        const subData = await subResp.json();
-        subCount = subData.count ?? 0;
       }
 
       setLastSyncedAt(new Date());
-      message.success(
-        `Sync complete — ${assignData.count} assignments` +
-        (subCount ? `, ${subCount} submissions pulled` : '') +
-        '!',
-      );
       handleRefresh();
     } catch {
       message.error('Force sync failed. Please try again.');
@@ -163,13 +143,11 @@ export const DashboardPage = () => {
         throw new Error(errorData.error || 'Failed to export data');
       }
 
-      // Convert the response to a Blob (raw file data)
       const blob = await response.blob();
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = downloadUrl;
 
-      // Try to extract the true filename from the backend headers, fallback to a default
       const disposition = response.headers.get('Content-Disposition');
       let filename = 'Grades_Export.xlsx';
       if (disposition && disposition.indexOf('filename=') !== -1) {
@@ -177,7 +155,6 @@ export const DashboardPage = () => {
         if (matches != null && matches[1]) filename = matches[1];
       }
 
-      // Trigger the hidden download link
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
@@ -302,4 +279,3 @@ export const DashboardPage = () => {
     </div>
   );
 };
-
