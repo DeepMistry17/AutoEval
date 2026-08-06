@@ -21,11 +21,16 @@ const submissionsRoutes = require('./routes/submissions.routes');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Parse CORS origins from .env (supports single URL or comma-separated list)
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((origin) => origin.trim())
+  : ['http://localhost:8081'];
+
 // ─── WEBSOCKET BRIDGE ───────────────────────────────────────────────────────
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN, // Dynamically sourced from .env
+    origin: allowedOrigins, // Dynamically sourced array from .env
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     credentials: true
   }
@@ -49,7 +54,7 @@ app.use(express.json());
 
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN, // Dynamically sourced from .env
+    origin: allowedOrigins, // Dynamically sourced array from .env
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
@@ -60,8 +65,6 @@ app.use(
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
-
-// ❌ DELETED: The /api/webhook/n8n-graded route has been removed. 
 
 // ─── Protected routes ───────────────────────────────────────────────────────
 app.use('/api/auth', authMiddleware, authRoutes);
@@ -74,6 +77,6 @@ app.use(errorHandler);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ SAKEC API server running with WebSockets on http://0.0.0.0:${PORT}`);
-  console.log(`   CORS origin: ${process.env.CORS_ORIGIN}`);
+  console.log(`   CORS origin(s): ${allowedOrigins.join(', ')}`);
   console.log(`   Environment: ${process.env.NODE_ENV}`);
 });
