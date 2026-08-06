@@ -173,7 +173,7 @@ module.exports = {
   // ─── Auth ────────────────────────────────────────────────────────────────────
   FIND_TEACHER_BY_EMAIL: `
     SELECT teacher_id, full_name, MS_email, google_email, ms_id
-    FROM sakec.teachers
+    FROM ${schema}.teachers
     WHERE LOWER(MS_email) = LOWER($1) OR LOWER(google_email) = LOWER($1);
   `,
   
