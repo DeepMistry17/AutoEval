@@ -2,9 +2,8 @@ import { Refine, Authenticated } from '@refinedev/core';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import routerBindings from '@refinedev/react-router';
 import { ConfigProvider, App as AntApp, theme } from 'antd';
-import { MsalProvider } from '@azure/msal-react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 
-import { msalInstance } from './config/msalConfig';
 import { authProvider } from './authProvider';
 import { dataProvider } from './dataProvider';
 
@@ -16,9 +15,11 @@ import { AppLayout } from './components/layout';
 
 import '@refinedev/antd/dist/reset.css';
 
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+
 function App() {
   return (
-    <MsalProvider instance={msalInstance}>
+    <GoogleOAuthProvider clientId={googleClientId}>
       <BrowserRouter>
         <ConfigProvider
           theme={{
@@ -34,8 +35,8 @@ function App() {
             },
             components: {
               Layout: {
-                headerBg: '#141414', // Matches the dark cards perfectly (No blue tint)
-                siderBg: '#0a0a0a',  // Matches the black background perfectly
+                headerBg: '#141414', // Matches dark cards
+                siderBg: '#0a0a0a',  // Matches black background
               },
               Table: {
                 headerBg: '#1a1a1a', // Distinct dark grey for table headers
@@ -62,7 +63,7 @@ function App() {
                 {
                   name: 'clearance',
                   list: '/clearance',
-                  meta: { label: 'Term Clearance', icon: '📁' }, // <--- ADD THIS BLOCK
+                  meta: { label: 'Term Clearance', icon: '📁' },
                 },
               ]}
               options={{
@@ -95,7 +96,7 @@ function App() {
           </AntApp>
         </ConfigProvider>
       </BrowserRouter>
-    </MsalProvider>
+    </GoogleOAuthProvider>
   );
 }
 

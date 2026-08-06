@@ -43,3 +43,4 @@ dummyui/
 # OS Generated
 .DS_Store
 Thumbs.db
+.nfs*

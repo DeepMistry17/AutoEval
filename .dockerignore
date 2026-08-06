@@ -9,3 +9,7 @@ sakec-refine-dashboard/frontend/node_modules
 sakec-refine-dashboard/backend/node_modules
 **/*.mp4
 **/*.png
+*.log
+temp_pdfs
+temp_pages
+postgres_data/

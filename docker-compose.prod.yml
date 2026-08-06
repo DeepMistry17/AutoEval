@@ -5,8 +5,8 @@ networks:
 services:
   # PRODUCTION LOGIC ENGINE (n8n)
   n8n-prod:
-    image: n8nio/n8n
-    container_name: sakec_n8n_prod  # Unique name
+    build: .
+    container_name: sakec_n8n_prod # Unique name  
     restart: always
     ports:
       - "5679:5678"                 # Shifted port so it doesn't clash with dev (5678)
@@ -29,6 +29,8 @@ services:
       - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_POSTGRESDB_SCHEMA=n8n_prod        # <-- REVERT THIS BACK TO "n8n_prod"
       - NODES_EXCLUDE=[]
+      - NODE_FUNCTION_ALLOW_BUILTIN=fs,path
+      - N8N_CONCURRENCY_PRODUCTION_LIMIT=1
     volumes:
       - /home/grading-storage/n8n_data:/home/node/.n8n
       - /home/grading-storage/n8n-files:/home/node/.n8n-files
