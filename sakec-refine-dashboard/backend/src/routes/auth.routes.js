@@ -1,21 +1,53 @@
 const { Router } = require('express');
 const pool = require('../config/db');
-const { FIND_TEACHER_BY_EMAIL } = require('../utils/queries');
+const { FIND_TEACHER_BY_EMAIL, UPDATE_TEACHER_MS_ID } = require('../utils/queries');
 
 const router = Router();
 
+// ─── BACKGROUND AUTO-HEALER ──────────────────────────────────────────────────
+// This function runs independently so it doesn't slow down the user's login.
+async function autoHealMsIdInBackground(email) {
+  try {
+    const tokenParams = new URLSearchParams({
+      client_id: process.env.AZURE_CLIENT_ID,
+      client_secret: process.env.AZURE_CLIENT_SECRET, 
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    });
+
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenParams.toString()
+    });
+
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return;
+
+    const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${email}`, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    
+    const userData = await userRes.json();
+    
+    if (userData.id) {
+      await pool.query(UPDATE_TEACHER_MS_ID, [userData.id, email]);
+      console.log(`[AUTH] Background Auto-healed ms_id for ${email}: ${userData.id}`);
+    }
+  } catch (err) {
+    console.warn(`[AUTH] Background MS_ID heal failed for ${email}:`, err.message);
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * POST /api/auth/login
- * Body: { token } — the Azure AD access token from the frontend
- * Returns: { user } if teacher exists, 403 if not
- *
- * NOTE: In production, the frontend sends the Azure AD token.
- *       The auth middleware validates it and attaches req.user.
- *       This endpoint simply returns the user profile.
  */
 router.post('/login', async (req, res, next) => {
   try {
-    // req.user is already set by the auth middleware
+    // Fire the auto-healer in the background (Notice there is no 'await' here!)
+    autoHealMsIdInBackground(req.user.email);
+
     res.json({
       user: {
         email: req.user.email,
@@ -30,7 +62,6 @@ router.post('/login', async (req, res, next) => {
 
 /**
  * GET /api/auth/me
- * Returns the currently authenticated user's profile
  */
 router.get('/me', async (req, res, next) => {
   try {
