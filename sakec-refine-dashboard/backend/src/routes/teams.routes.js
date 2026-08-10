@@ -5,6 +5,7 @@ const {
   GET_TEACHER_TEAMS,
   GET_DROPDOWN_TEAMS,
   ARCHIVE_TEAM,
+  UPDATE_TEACHER_MS_ID
 } = require('../utils/queries');
 
 const router = Router();
@@ -48,6 +49,21 @@ router.get('/preview-sync', async (req, res, next) => {
 
     const tokenData = await tokenRes.json();
     if (!tokenData.access_token) throw new Error('Failed to get MS Graph token');
+    // --- NEW: AUTO-HEAL MS_ID IN BACKGROUND ----------------------------------
+    try {
+      const userRes = await fetch(`https://graph.microsoft.com/v1.0/users/${req.user.email}`, {
+        headers: { Authorization: `Bearer ${tokenData.access_token}` }
+      });
+      const userData = await userRes.json();
+      
+      if (userData.id) {
+        await pool.query(UPDATE_TEACHER_MS_ID, [userData.id, req.user.email]);
+        console.log(`[SYNC] Auto-healed ms_id for ${req.user.email}: ${userData.id}`);
+      }
+    } catch (healErr) {
+      console.warn(`[SYNC] Could not auto-heal ms_id for ${req.user.email}:`, healErr.message);
+    }
+    // -------------------------------------------------------------------------
 
     const graphRes = await fetch(`https://graph.microsoft.com/v1.0/education/users/${req.user.email}/classes`, {
       headers: { Authorization: `Bearer ${tokenData.access_token}` }

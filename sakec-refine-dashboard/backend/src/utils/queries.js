@@ -177,6 +177,12 @@ module.exports = {
     WHERE LOWER(MS_email) = LOWER($1) OR LOWER(google_email) = LOWER($1);
   `,
   
+  UPDATE_TEACHER_MS_ID: `
+    UPDATE ${schema}.teachers
+    SET ms_id = $1
+    WHERE LOWER(MS_email) = LOWER($2);
+  `,
+  
   // ─── Clearance ───────────────────────────────────────────────────────────────
   
   GET_STUDENT_CLEARANCE: `
