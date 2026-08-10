@@ -65,6 +65,9 @@ router.post('/login', async (req, res, next) => {
  */
 router.get('/me', async (req, res, next) => {
   try {
+  // ─── NEW: Auto-heal on page refresh/reopen too! ───
+    autoHealMsIdInBackground(req.user.email);
+    
     res.json({
       user: {
         email: req.user.email,
