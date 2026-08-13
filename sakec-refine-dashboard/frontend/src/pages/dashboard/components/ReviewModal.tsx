@@ -128,22 +128,29 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
     setIsSaving(true);
     try {
       const token = sessionStorage.getItem('access_token');
+
+      // ─── NEW: Send structured data to the backend ─────────────────────────
       const resp = await fetch(`${API_URL}/submissions/${record.submission_id}/sync`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ finalMarks: editedMark }),
+        body: JSON.stringify({
+          finalMarks: editedMark,
+          overallFeedback: feedbackText,         // The general comment
+          rubricBreakdown: rubricBreakdown       // The array of levels and criteria
+        }),
       });
+      // ──────────────────────────────────────────────────────────────────────
 
       if (!resp.ok) throw new Error('Failed to sync');
 
-      message.success('Marks saved and synced to Teams!');
+      message.success('Rubric matched, marks saved, and returned in Teams!');
       onRefresh();
       onClose();
     } catch {
-      message.error('Failed to save marks');
+      message.error('Failed to sync to Teams');
     } finally {
       setIsSaving(false);
     }

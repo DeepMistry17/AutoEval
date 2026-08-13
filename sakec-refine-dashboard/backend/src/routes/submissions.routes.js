@@ -7,21 +7,182 @@ const router = Router();
 
 /**
  * PATCH /api/submissions/:id/sync
- * Body: { finalMarks }
- * Updates final_marks and sets status='Synced' for the given submission
+ * DEBUG MODE: Extracts hidden MS Graph properties and fuzzy maps them.
  */
 router.patch('/:id/sync', async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { finalMarks } = req.body;
+    const { id } = req.params; 
+    const { finalMarks, overallFeedback, rubricBreakdown } = req.body;
 
     if (finalMarks === undefined || finalMarks === null) {
       return res.status(400).json({ error: 'finalMarks is required' });
     }
 
     await pool.query(SYNC_FINAL_MARKS, [finalMarks, id]);
-    res.json({ message: 'Marks synced successfully' });
+
+    const metaQuery = await pool.query(`
+      SELECT s.assignment_id, a.team_id 
+      FROM ${schema}.submissions s
+      JOIN ${schema}.assignments a ON s.assignment_id = a.assignment_id
+      WHERE s.submission_id = $1
+    `, [id]);
+
+    if (metaQuery.rows.length === 0) throw new Error('Submission not found');
+    const { assignment_id, team_id } = metaQuery.rows[0];
+
+    const tokenParams = new URLSearchParams({
+      client_id: process.env.AZURE_CLIENT_ID,
+      client_secret: process.env.AZURE_CLIENT_SECRET, 
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    });
+
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenParams.toString()
+    });
+    
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.status(200).json({ message: 'Token Error' });
+
+    const outcomesRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes`, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    const outcomesData = await outcomesRes.json();
+
+    let rubricOutcomeId = null;
+    let feedbackOutcomeId = null;
+    let pointsOutcomeId = null;
+
+    if (outcomesData.value) {
+      outcomesData.value.forEach(outcome => {
+        if (outcome['@odata.type'] === '#microsoft.graph.educationRubricOutcome') rubricOutcomeId = outcome.id;
+        if (outcome['@odata.type'] === '#microsoft.graph.educationFeedbackOutcome') feedbackOutcomeId = outcome.id;
+        if (outcome['@odata.type'] === '#microsoft.graph.educationPointsOutcome') pointsOutcomeId = outcome.id;
+      });
+    }
+
+    if (pointsOutcomeId) {
+      await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes/${pointsOutcomeId}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          "@odata.type": "#microsoft.graph.educationPointsOutcome",
+          "points": { "@odata.type": "#microsoft.graph.educationAssignmentPointsGrade", "points": parseFloat(finalMarks) }
+        })
+      });
+    }
+
+    console.log('\n================ RUBRIC DIAGNOSTICS START ================');
+    let msRubric = null;
+    try {
+      const rubricFetchUrl = `https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/rubric`;
+      const rubricFetch = await fetch(rubricFetchUrl, { headers: { Authorization: `Bearer ${tokenData.access_token}` } });
+      
+      if (rubricFetch.ok) {
+        msRubric = await rubricFetch.json();
+      }
+    } catch (e) {
+      console.error('[DEBUG] Exception during rubric fetch:', e);
+    }
+
+    if (!msRubric || !msRubric.qualities) {
+      console.log('[DEBUG] ERROR: msRubric or msRubric.qualities is UNDEFINED.');
+    } else {
+      console.log(`[DEBUG] RAW MS Quality [0] Schema:`, JSON.stringify(msRubric.qualities[0]));
+      console.log(`[DEBUG] RAW MS Level [0] Schema:`, JSON.stringify(msRubric.levels[0]));
+      
+      let mappedSelectedLevels = [];
+      let mappedQualityFeedback = [];
+      
+      // DEEP EXTRACTOR: Rips text out of nested Microsoft objects
+      const fuzzyClean = (val) => {
+        if (val === null || val === undefined) return '';
+        let str = val;
+        if (typeof val === 'object') {
+          str = val.content || val.displayName || val.title || JSON.stringify(val);
+        }
+        return String(str).toLowerCase().replace(/[^a-z0-9]/g, '');
+      };
+
+      rubricBreakdown.forEach(rbItem => {
+        const aiCatFuzzy = fuzzyClean(rbItem.category);
+        
+        const quality = msRubric.qualities.find(q => {
+          // Check everywhere Microsoft might be hiding the category name
+          const qText = q.displayName || q.description || q.title || '';
+          const msCatFuzzy = fuzzyClean(qText);
+          return msCatFuzzy && aiCatFuzzy && (msCatFuzzy.includes(aiCatFuzzy) || aiCatFuzzy.includes(msCatFuzzy));
+        });
+
+        if (quality) {
+          const targetLevelFuzzy = `level${rbItem.level}`; 
+          
+          let matchedLevel = msRubric.levels.find(l => {
+            const lText = l.displayName || l.description || l.title || '';
+            return fuzzyClean(lText).includes(targetLevelFuzzy);
+          });
+
+          if (!matchedLevel) {
+            let levelIndex = msRubric.levels.length - rbItem.level; 
+            if (levelIndex < 0 || levelIndex >= msRubric.levels.length) levelIndex = 0;
+            matchedLevel = msRubric.levels[levelIndex];
+          }
+
+          if (matchedLevel) {
+            mappedSelectedLevels.push({ qualityId: quality.qualityId, columnId: matchedLevel.levelId });
+          }
+
+          if (rbItem.comment) {
+            const cleanComment = rbItem.comment.replace(/\[Level \d+\]\s*/i, '').trim();
+            mappedQualityFeedback.push({ qualityId: quality.qualityId, feedback: { content: cleanComment, contentType: "text" } });
+          }
+        } else {
+          console.log(`[DEBUG] FAILED to match Quality for: ${rbItem.category}`);
+        }
+      });
+
+      if (mappedSelectedLevels.length > 0) {
+        const rubricPayload = {
+          "@odata.type": "#microsoft.graph.educationRubricOutcome",
+          "rubricQualitySelectedLevels": mappedSelectedLevels,
+          "rubricQualityFeedback": mappedQualityFeedback
+        };
+        
+        const rubricPatchRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes/${rubricOutcomeId}`, {
+          method: 'PATCH',
+          headers: { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(rubricPayload)
+        });
+        
+        if (!rubricPatchRes.ok) {
+          console.error('[DEBUG] Rubric PATCH Failed Response:', await rubricPatchRes.text());
+        }
+      }
+    }
+    console.log('================ RUBRIC DIAGNOSTICS END ================\n');
+
+    if (feedbackOutcomeId && overallFeedback) {
+      await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes/${feedbackOutcomeId}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          "@odata.type": "#microsoft.graph.educationFeedbackOutcome",
+          "feedback": { "text": { "content": overallFeedback, "contentType": "text" } }
+        })
+      });
+    }
+
+    await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/return`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+
+    res.json({ message: 'Synced and Returned successfully' });
+    
   } catch (err) {
+    console.error('[SYNC ERROR]:', err);
     next(err);
   }
 });
@@ -209,12 +370,16 @@ router.post('/webhook/system-sync-all', async (req, res, next) => {
         }
 
         for (const submission of subData.value) {
-          if (submission.status === 'submitted' || submission.status === 'returned') {
+          if (submission.status === 'returned') {
+            continue; 
+          }
+
+          if (submission.status === 'submitted') {
             const studentMsId = submission.recipient?.userId; 
             
             if (!studentMsId) continue;
 
-            // Failsafe: Ensure student exists in DB (Should rarely be hit now due to Phase 1)
+            // 1. Failsafe: Ensure student exists in DB
             const tempPrn = `MS_${studentMsId.substring(0,8)}`;
             const uniqueDummyEmail = `pending_${studentMsId.substring(0,8)}@${schema}.edu`;
             
@@ -224,7 +389,7 @@ router.post('/webhook/system-sync-all', async (req, res, next) => {
               ON CONFLICT (microsoft_id) DO NOTHING;
             `, [tempPrn, studentMsId, 'Student (Pending Roster)', uniqueDummyEmail]);
 
-            // Fetch Real PRN
+            // 2. Fetch Real PRN
             const studentLookup = await pool.query(
               `SELECT prn FROM ${schema}.students WHERE microsoft_id = $1`, 
               [studentMsId]
@@ -233,7 +398,35 @@ router.post('/webhook/system-sync-all', async (req, res, next) => {
             if (studentLookup.rows.length === 0) continue; 
             const actualPrn = studentLookup.rows[0].prn;
 
-            // Extract File URL
+            // --- ?? THE BULLETPROOF DB CHECK WITH HEAVY DIAGNOSTICS ?? ---
+            console.log(`\n[DEBUG SYNC] --- Checking Lock for PRN: ${actualPrn} | Assignment: ${assignment_id} ---`);
+            const gradeCheck = await pool.query(`
+              SELECT submission_id, final_marks, status 
+              FROM ${schema}.submissions 
+              WHERE assignment_id = $1 AND prn = $2
+            `, [assignment_id, actualPrn]);
+
+            console.log(`[DEBUG SYNC] Rows found in DB: ${gradeCheck.rows.length}`);
+            if (gradeCheck.rows.length > 0) {
+              console.log(`[DEBUG SYNC] Row data:`, JSON.stringify(gradeCheck.rows));
+            }
+
+            const isAlreadyGraded = gradeCheck.rows.some(row => 
+              row.final_marks !== null || 
+              ['Synced', 'synced', 'Returned', 'returned'].includes(row.status)
+            );
+
+            console.log(`[DEBUG SYNC] isAlreadyGraded evaluated to: ${isAlreadyGraded}`);
+
+            if (isAlreadyGraded) {
+              console.log(`[SYNC] Skipped student ${actualPrn} - Assignment already graded locally.`);
+              continue; // Drop it! Do not fetch files, do not update the database.
+            }
+            
+            console.log(`[DEBUG SYNC] Lock passed. Fetching files and updating to Pending...`);
+            // -------------------------------------------------------------
+
+            // 3. Extract File URL
             let fileUrl = null;
             const resourcesRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${ms_assignment_id}/submissions/${submission.id}/submittedResources`, {
               headers: { Authorization: `Bearer ${tokenData.access_token}` }
@@ -249,12 +442,12 @@ router.post('/webhook/system-sync-all', async (req, res, next) => {
               }
             }
 
-            // Calculate Lateness
+            // 4. Calculate Lateness
             const submissionTimeStr = submission.submittedDateTime || new Date().toISOString();
             const submissionTime = new Date(submissionTimeStr);
             let isLate = dueDateObj ? (submissionTime > dueDateObj) : false;
 
-            // Safe Upsert (Overrides AI grades if student resubmits)
+            // 5. Standard Upsert
             await pool.query(`
               INSERT INTO ${schema}.submissions (submission_id, assignment_id, prn, submission_time, status, file_path, is_late)
               VALUES ($1, $2, $3, $4, $5, $6, $7)

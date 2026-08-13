@@ -1,9 +1,9 @@
 const schema = process.env.DB_SCHEMA || 'sakec';
 const { Router } = require('express');
 const pool = require('../config/db');
-const ExcelJS = require('exceljs'); // <-- NEW
-const path = require('path');       // <-- NEW
-const { EXPORT_ASSIGNMENT_DATA } = require('../utils/queries'); // <-- NEW
+const ExcelJS = require('exceljs'); 
+const path = require('path');       
+const { EXPORT_ASSIGNMENT_DATA } = require('../utils/queries'); 
 
 const router = Router();
 
@@ -102,7 +102,6 @@ router.post('/sync', async (req, res, next) => {
       // PART A: SYNC ASSIGNMENTS
       console.log(`    Fetching Assignments...`);
       
-      // FIX 1: Add ?$expand=rubric to force MS Graph to attach the rubric payload
       const assignRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team.team_id}/assignments?$expand=rubric`, {
         headers: { Authorization: `Bearer ${tokenData.access_token}` }
       });
@@ -121,14 +120,9 @@ router.post('/sync', async (req, res, next) => {
             console.log(`    Found ${myAssignments.length} assignments belonging to you.`);
             for (const msAssignment of myAssignments) {
               
-              // FIX 2: Extract the rubric. It's a complex JSON object, so we stringify it.
-              // (Large Language Models are excellent at reading raw JSON strings!)
               const rubricData = msAssignment.rubric ? JSON.stringify(msAssignment.rubric) : null;
-
-              // --- NEW: Extract the total maximum marks from the MS Assignment grading object ---
               const totalMarks = msAssignment.grading?.maxPoints || 10;
 
-              // FIX 3: Add your rubric AND total_marks column to the INSERT query
               await pool.query(`
                 INSERT INTO ${schema}.assignments (assignment_id, team_id, ms_assignment_id, title, description, due_date, is_archived, rubric_context, total_marks)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
@@ -145,8 +139,8 @@ router.post('/sync', async (req, res, next) => {
                 msAssignment.instructions?.content || '', 
                 msAssignment.dueDateTime || null, 
                 false,
-                rubricData, // <-- Pushing the stringified rubric to the DB!
-                totalMarks  // <-- Pushing the dynamic max marks to the DB!
+                rubricData, 
+                totalMarks  
               ]);
               assignmentsSynced++;
             }
@@ -187,7 +181,6 @@ router.post('/sync', async (req, res, next) => {
         
         for (const student of students) {
           
-          // ?? THE DOUBLE SHIELD: Block if they are an Owner OR if it's your own ID
           if (ownerIds.has(student.id) || student.id === trueMsId) {
             console.log(`    Skipping ${student.displayName} (Identified as Teacher/Owner)`);
             continue;
@@ -230,12 +223,12 @@ router.post('/sync', async (req, res, next) => {
 
 /**
  * POST /api/assignments/:assignmentId/sync-submissions
+ * Handles the manual "Sync Now" button from the frontend dashboard.
  */
 router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
   try {
     const { assignmentId } = req.params;
 
-    // CHANGE 1: Fetch both team_id AND due_date from the assignments table
     const assignRes = await pool.query(
       `SELECT team_id, due_date FROM ${schema}.assignments WHERE assignment_id = $1`,
       [assignmentId]
@@ -247,7 +240,7 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
     
     const teamId = assignRes.rows[0].team_id;
     const dueDateStr = assignRes.rows[0].due_date;
-    const dueDate = dueDateStr ? new Date(dueDateStr) : null; // Parse the due date
+    const dueDate = dueDateStr ? new Date(dueDateStr) : null; 
 
     const tokenParams = new URLSearchParams({
       client_id: process.env.AZURE_CLIENT_ID,
@@ -279,124 +272,142 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
 
     if (subData.value && subData.value.length > 0) {
       for (const submission of subData.value) {
-        if (submission.status === 'submitted' || submission.status === 'returned') {
+        if (submission.status === 'returned') {
+          continue; 
+        }
+
+        if (submission.status === 'submitted') {
           const studentMsId = submission.recipient?.userId; 
           
-          if (studentMsId) {
-            const tempPrn = `MS_${studentMsId.substring(0,8)}`;
-            const uniqueDummyEmail = `pending_${studentMsId.substring(0,8)}@${schema}.edu`;
-            
-            await pool.query(`
-              INSERT INTO ${schema}.students (prn, microsoft_id, full_name, ms_email)
-              VALUES ($1, $2, $3, $4)
-              ON CONFLICT (microsoft_id) DO NOTHING;
-            `, [tempPrn, studentMsId, 'Student (Pending Roster)', uniqueDummyEmail]);
+          if (!studentMsId) continue;
 
-            // === THE FIX: Fetch the REAL PRN from the database ===
-            const studentLookup = await pool.query(
-              `SELECT prn FROM ${schema}.students WHERE microsoft_id = $1`, 
-              [studentMsId]
-            );
-            
-            if (studentLookup.rows.length === 0) {
-              console.log(`[WARN] Skipping submission. Student with MS ID ${studentMsId} not found.`);
-              continue; // Skip to the next student gracefully
-            }
-            
-            const actualPrn = studentLookup.rows[0].prn;
-            // =======================================================
+          const tempPrn = `MS_${studentMsId.substring(0,8)}`;
+          const uniqueDummyEmail = `pending_${studentMsId.substring(0,8)}@${schema}.edu`;
+          
+          await pool.query(`
+            INSERT INTO ${schema}.students (prn, microsoft_id, full_name, ms_email)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (microsoft_id) DO NOTHING;
+          `, [tempPrn, studentMsId, 'Student (Pending Roster)', uniqueDummyEmail]);
 
-            let fileUrl = null;
-            
-            const resourcesRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${teamId}/assignments/${assignmentId}/submissions/${submission.id}/submittedResources`, {
-              headers: { Authorization: `Bearer ${tokenData.access_token}` }
-            });
-            const resourcesData = await resourcesRes.json();
+          const studentLookup = await pool.query(
+            `SELECT prn FROM ${schema}.students WHERE microsoft_id = $1`, 
+            [studentMsId]
+          );
+          
+          if (studentLookup.rows.length === 0) {
+            console.log(`[WARN] Skipping submission. Student with MS ID ${studentMsId} not found.`);
+            continue; 
+          }
+          
+          const actualPrn = studentLookup.rows[0].prn;
 
-            if (resourcesData.value && resourcesData.value.length > 0) {
-              for (const item of resourcesData.value) {
-                if (item.resource && item.resource.fileUrl) {
-                  fileUrl = item.resource.fileUrl;
-                  break; 
-                }
+          // --- ?? THE BULLETPROOF DB CHECK WITH HEAVY DIAGNOSTICS ?? ---
+          console.log(`\n[DEBUG SYNC MANUAL] --- Checking Lock for PRN: ${actualPrn} | Assignment: ${assignmentId} ---`);
+          const gradeCheck = await pool.query(`
+            SELECT submission_id, final_marks, status 
+            FROM ${schema}.submissions 
+            WHERE assignment_id = $1 AND prn = $2
+          `, [assignmentId, actualPrn]);
+
+          console.log(`[DEBUG SYNC MANUAL] Rows found in DB: ${gradeCheck.rows.length}`);
+          if (gradeCheck.rows.length > 0) {
+            console.log(`[DEBUG SYNC MANUAL] Row data:`, JSON.stringify(gradeCheck.rows));
+          }
+
+          const isAlreadyGraded = gradeCheck.rows.some(row => 
+            row.final_marks !== null || 
+            ['Synced', 'synced', 'Returned', 'returned'].includes(row.status)
+          );
+
+          console.log(`[DEBUG SYNC MANUAL] isAlreadyGraded evaluated to: ${isAlreadyGraded}`);
+
+          if (isAlreadyGraded) {
+            console.log(`[SYNC MANUAL] Skipped student ${actualPrn} - Assignment already graded locally.`);
+            continue; 
+          }
+          
+          console.log(`[DEBUG SYNC MANUAL] Lock passed. Fetching files and updating to Pending...`);
+          // -------------------------------------------------------------
+
+          let fileUrl = null;
+          
+          const resourcesRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${teamId}/assignments/${assignmentId}/submissions/${submission.id}/submittedResources`, {
+            headers: { Authorization: `Bearer ${tokenData.access_token}` }
+          });
+          const resourcesData = await resourcesRes.json();
+
+          if (resourcesData.value && resourcesData.value.length > 0) {
+            for (const item of resourcesData.value) {
+              if (item.resource && item.resource.fileUrl) {
+                fileUrl = item.resource.fileUrl;
+                break; 
               }
             }
-
-            // CHANGE 2: Calculate if the submission is late
-            const submissionTimeStr = submission.submittedDateTime || new Date().toISOString();
-            const submissionTime = new Date(submissionTimeStr);
-            
-            let isLate = false;
-            if (dueDate) {
-              isLate = submissionTime > dueDate;
-            }
-
-            // CHANGE 3: Upsert logic with Timestamp Comparison for Resubmissions
-            await pool.query(`
-              INSERT INTO ${schema}.submissions (submission_id, assignment_id, prn, submission_time, status, file_path, is_late)
-              VALUES ($1, $2, $3, $4, $5, $6, $7)
-              ON CONFLICT (submission_id) 
-              DO UPDATE SET 
-                -- 1. Reset Status to Pending if a newer file is detected
-                status = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN 'Pending' 
-                  ELSE ${schema}.submissions.status 
-                END,
-                -- 2. Update File URLs
-                file_path = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.file_path 
-                  ELSE ${schema}.submissions.file_path 
-                END,
-                -- 3. Nullify old AI data to ensure a clean slate for the new evaluation
-                ai_suggested_marks = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
-                  ELSE ${schema}.submissions.ai_suggested_marks 
-                END,
-                final_marks = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
-                  ELSE ${schema}.submissions.final_marks 
-                END,
-                ai_feedback = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
-                  ELSE ${schema}.submissions.ai_feedback 
-                END,
-                local_converted_path = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
-                  ELSE ${schema}.submissions.local_converted_path 
-                END,
-                -- 4. Update the late flag and timestamp
-                is_late = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.is_late 
-                  ELSE ${schema}.submissions.is_late 
-                END,
-                submission_time = CASE 
-                  WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.submission_time 
-                  ELSE ${schema}.submissions.submission_time 
-                END;
-            `, [
-              submission.id,
-              assignmentId,
-              actualPrn, 
-              submissionTime,
-              'Pending', 
-              fileUrl,
-              isLate 
-            ]);
-            
-            syncedCount++;
           }
+
+          const submissionTimeStr = submission.submittedDateTime || new Date().toISOString();
+          const submissionTime = new Date(submissionTimeStr);
+          
+          let isLate = false;
+          if (dueDate) {
+            isLate = submissionTime > dueDate;
+          }
+
+          await pool.query(`
+            INSERT INTO ${schema}.submissions (submission_id, assignment_id, prn, submission_time, status, file_path, is_late)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT (submission_id) 
+            DO UPDATE SET 
+              status = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN 'Pending' 
+                ELSE ${schema}.submissions.status 
+              END,
+              file_path = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.file_path 
+                ELSE ${schema}.submissions.file_path 
+              END,
+              ai_suggested_marks = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                ELSE ${schema}.submissions.ai_suggested_marks 
+              END,
+              final_marks = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                ELSE ${schema}.submissions.final_marks 
+              END,
+              ai_feedback = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                ELSE ${schema}.submissions.ai_feedback 
+              END,
+              local_converted_path = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN NULL 
+                ELSE ${schema}.submissions.local_converted_path 
+              END,
+              is_late = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.is_late 
+                ELSE ${schema}.submissions.is_late 
+              END,
+              submission_time = CASE 
+                WHEN EXCLUDED.submission_time > ${schema}.submissions.submission_time THEN EXCLUDED.submission_time 
+                ELSE ${schema}.submissions.submission_time 
+              END;
+          `, [
+            submission.id,
+            assignmentId,
+            actualPrn, 
+            submissionTime,
+            'Pending', 
+            fileUrl,
+            isLate 
+          ]);
+          
+          syncedCount++;
         }
       }
     }
 
-    // --- NEW: FIRE THE n8n STARTING GUN ---------------------------------------
-    // We intentionally do not 'await' this fetch. We want n8n to start grading
-    // in the background while the Node server instantly responds to the React UI.
-    // --- GENERALIZED: FIRE THE n8n STARTING GUN ---------------------------------------
     if (syncedCount > 0) {
       console.log('?? Firing n8n starting gun for grading queue...');
-      
-      // Dynamically uses the N8N url from your .env file
       const n8nUrl = process.env.N8N_INTERNAL_URL || 'http://localhost:5678';
       
       fetch(`${n8nUrl}/webhook/trigger-evaluation`, {
@@ -405,7 +416,6 @@ router.post('/:assignmentId/sync-submissions', async (req, res, next) => {
         body: JSON.stringify({ action: 'start_queue' })
       }).catch(err => console.error('?? Failed to ping n8n webhook:', err.message));
     }
-    // ----------------------------------------------------------------------------
 
     res.status(200).json({ message: `Synced ${syncedCount} submissions`, count: syncedCount });
 
@@ -465,7 +475,7 @@ router.get('/view-file', async (req, res, next) => {
     res.status(500).send('Failed to load document preview.');
   }
 });
-// --- NEW: Local PDF Server Route ---
+
 const fs = require('fs');
 
 router.get('/local-pdf', (req, res) => {
@@ -476,15 +486,9 @@ router.get('/local-pdf', (req, res) => {
       return res.status(400).send('No file path provided.');
     }
 
-    // Step 1: Clean the path string that came from the database
-    // n8n saves it as "/home/node/.n8n-files/temp_pdfs/filename.pdf"
-    // We only want the filename: "filename.pdf"
     const fileName = filePath.split('/').pop();
-
-    // Step 2: Build the path to the shared volume in the backend container
     const actualFilePath = path.join('/', 'shared_n8n_files', 'temp_pdfs', fileName);
 
-    // Step 3: Check if it exists and send it
     if (!fs.existsSync(actualFilePath)) {
       return res.status(404).send('Local PDF not found.');
     }
@@ -496,9 +500,9 @@ router.get('/local-pdf', (req, res) => {
     res.status(500).send('Failed to serve local PDF.');
   }
 });
+
 /**
  * GET /api/assignments/:assignmentId/export
- * Dynamically generates a richly formatted Excel file with a logo header.
  */
 router.get('/:assignmentId/export', async (req, res, next) => {
   try {
@@ -509,22 +513,17 @@ router.get('/:assignmentId/export', async (req, res, next) => {
       return res.status(404).json({ error: 'No submissions found for this assignment.' });
     }
 
-    // 1. Create a new Excel Workbook and Sheet
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Grades');
 
-    // 2. Parse the data and identify all dynamic parameters
     let processedRows = [];
     let dynamicColumnsSet = new Set();
 
     records.rows.forEach(row => {
-      
-      // Calculate Points and Percentage
       const points = row.final_marks !== null ? row.final_marks : row.ai_suggested_marks;
       const maxPoints = row.total_marks || 10;
       const percentage = points !== null ? Math.round((points / maxPoints) * 100) + '%' : '0%';
 
-      // Base row data mapped to your requested columns
       let parsedRow = {
         rollNo: row.roll_no || '',
         fullName: row.full_name,
@@ -537,7 +536,6 @@ router.get('/:assignmentId/export', async (req, res, next) => {
         percentage: percentage
       };
 
-      // 3. Regex Magic: Unpack the dynamic AI parameters from the text block
       if (row.ai_feedback) {
         const paramRegex = /- (.*?) \((.*?)\/(.*?)\): \[(.*?)\] (.*)/g;
         let match;
@@ -546,7 +544,7 @@ router.get('/:assignmentId/export', async (req, res, next) => {
           const paramScore = parseFloat(match[2]);
           const paramFeedback = match[5].trim();
 
-          dynamicColumnsSet.add(paramName); // Track this column globally
+          dynamicColumnsSet.add(paramName); 
           
           parsedRow[paramName] = paramScore;
           parsedRow[`${paramName} Feedback`] = paramFeedback;
@@ -555,7 +553,6 @@ router.get('/:assignmentId/export', async (req, res, next) => {
       processedRows.push(parsedRow);
     });
 
-    // 4. Build the Excel Headers dynamically (New Layout & Order)
     const dynamicColumns = Array.from(dynamicColumnsSet);
     
     let excelColumns = [
@@ -575,31 +572,20 @@ router.get('/:assignmentId/export', async (req, res, next) => {
       excelColumns.push({ header: `Feedback ${col}`, key: `${col} Feedback`, width: 40 });
     });
 
-    // 5. Assign columns first 
     worksheet.columns = excelColumns; 
 
-    // 6. Push the headers down and inject the Dynamic Title!
     const dynamicTitle = `${records.rows[0].assignment_name} - ${records.rows[0].team_name}`;
-    worksheet.spliceRows(1, 0,
-        [], 
-        [], 
-        [], 
-        [dynamicTitle], // Places your dynamic title in Column A
-        []
-    );
+    worksheet.spliceRows(1, 0, [], [], [], [dynamicTitle], []);
 
-    // 7. Center and Style the Title (Merge Columns A through I)
-    worksheet.mergeCells('A4:I4'); // Increased to I to span the new columns nicely
+    worksheet.mergeCells('A4:I4'); 
     const titleCell = worksheet.getCell('A4');
     titleCell.font = { size: 16, bold: true };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    // 8. Style the Header Row (now safely pushed to Row 6)
     const headerRow = worksheet.getRow(6);
     headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } }; // Blue background
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } }; 
 
-    // 9. Add the Logo (Shifted to the center)
     try {
       const logoId = workbook.addImage({
         filename: path.join(__dirname, '../assets/sakec_logo.png'), 
@@ -607,8 +593,6 @@ router.get('/:assignmentId/export', async (req, res, next) => {
       });
       
       worksheet.addImage(logoId, {
-        // Change col: 0 to col: 2 or 3 to push it towards the center!
-        // (col: 2 starts the image at Column C. col: 3 starts it at Column D)
         tl: { col: 2, row: 0 }, 
         ext: { width: 400, height: 80 }
       });
@@ -616,12 +600,10 @@ router.get('/:assignmentId/export', async (req, res, next) => {
       console.warn("Logo not found or could not be loaded.", imgErr.message);
     }
 
-    // 10. Add the Data Rows
     processedRows.forEach(data => {
       worksheet.addRow(data);
     });
 
-    // 11. Send the file to the frontend
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${records.rows[0].assignment_name}_Grades.xlsx"`);
     
