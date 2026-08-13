@@ -39,6 +39,18 @@ module.exports = {
       AND ($2::text IS NULL OR a.assignment_id = $2);
   `,
 
+  KPI_PROCESSING: `
+    SELECT COUNT(*) AS total
+    FROM ${schema}.submissions sub
+    JOIN ${schema}.assignments a ON sub.assignment_id = a.assignment_id
+    JOIN ${schema}.teams t ON a.team_id = t.team_id
+    JOIN ${schema}.teacher_teams tt ON t.team_id = tt.team_id
+    JOIN ${schema}.teachers tr ON tt.teacher_id = tr.teacher_id
+    WHERE tr.MS_email = $1
+      AND sub.status = 'Processing'
+      AND ($2::text IS NULL OR a.assignment_id = $2);
+  `,
+
   KPI_MISSING: `
     SELECT COALESCE(SUM(missing_per_assignment), 0) AS total
     FROM (

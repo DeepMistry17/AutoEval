@@ -4,6 +4,7 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   SyncOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 
@@ -12,6 +13,7 @@ interface KpiData {
   synced: number;
   overdue: number;
   awaiting: number;
+  processing: number;
 }
 
 interface Props {
@@ -31,8 +33,8 @@ export const KpiCards = ({ assignmentId }: Props) => {
   if (query.isLoading && assignmentId) {
     return (
       <Row gutter={[16, 16]}>
-        {[1, 2, 3, 4].map((i) => (
-          <Col xs={24} sm={12} md={6} key={i}>
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Col xs={24} sm={12} flex="1 1 200px" key={i}>
             <Card style={{ borderRadius: 12 }}>
               <Spin />
             </Card>
@@ -45,37 +47,46 @@ export const KpiCards = ({ assignmentId }: Props) => {
   const kpis = result?.data as unknown as KpiData | undefined;
 
   const displayAwaiting = assignmentId ? (kpis?.awaiting || 0) : '-';
+  const displayProcessing = assignmentId ? (kpis?.processing || 0) : '-';
   const displayPending = assignmentId ? (kpis?.pending || 0) : '-';
   const displayOverdue = assignmentId ? (kpis?.overdue || 0) : '-';
   const displayCompleted = assignmentId ? (kpis?.synced || 0) : '-';
 
+  // Array sorted in your requested specific order
   const cards = [
     {
-      title: 'Awaiting AI',
+      title: 'Not Submitted',
+      value: displayOverdue,
+      icon: <ExclamationCircleOutlined />,
+      color: '#dc2626', // Deeper red
+      bg: 'linear-gradient(135deg, #fecaca, #fca5a5)', // Richer red gradient
+    },
+    {
+      title: 'Pending AI evaluation',
       value: displayAwaiting,
       icon: <SyncOutlined />,
-      color: '#3b82f6',
+      color: '#3b82f6', // Classic blue
       bg: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
+    },
+    {
+      title: 'Processing',
+      value: displayProcessing,
+      icon: <SettingOutlined spin />,
+      color: '#ec4899', // Vibrant pink
+      bg: 'linear-gradient(135deg, #fce7f3, #fbcfe8)', // Pastel pink gradient
     },
     {
       title: 'Needs Review',
       value: displayPending,
       icon: <ClockCircleOutlined />,
-      color: '#f59e0b',
+      color: '#f59e0b', // Warm yellow
       bg: 'linear-gradient(135deg, #fef3c7, #fde68a)',
-    },
-    {
-      title: 'Not Submitted',
-      value: displayOverdue,
-      icon: <ExclamationCircleOutlined />,
-      color: '#ef4444',
-      bg: 'linear-gradient(135deg, #fee2e2, #fecaca)',
     },
     {
       title: 'Completed',
       value: displayCompleted,
       icon: <CheckCircleOutlined />,
-      color: '#10b981',
+      color: '#10b981', // Emerald green
       bg: 'linear-gradient(135deg, #d1fae5, #a7f3d0)',
     },
   ];
@@ -83,8 +94,7 @@ export const KpiCards = ({ assignmentId }: Props) => {
   return (
     <Row gutter={[16, 16]}>
       {cards.map((card) => (
-        // Adjusted the Col size to sm={12} md={6} so 4 cards fit evenly
-        <Col xs={24} sm={12} md={6} key={card.title}>
+        <Col xs={24} sm={12} flex="1 1 200px" key={card.title}>
           <Card
             style={{
               borderRadius: 12,

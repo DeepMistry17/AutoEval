@@ -5,6 +5,7 @@ const {
   KPI_SYNCED,
   KPI_AWAITING_EVAL,
   KPI_MISSING,
+  KPI_PROCESSING, // <-- Add this right here!
   GET_PENDING_GRADES,
   GET_ALIGNMENT_DATA,
   GET_STUDENT_SUMMARY,
@@ -17,18 +18,19 @@ const router = Router();
 
 /**
  * GET /api/dashboard/kpis
- * Returns all four KPI counts in a single response
+ * Returns all five KPI counts in a single response
  */
 router.get('/kpis', async (req, res, next) => {
   try {
     const email = req.user.email;
     const assignmentId = req.query.assignmentId || null;
 
-    const [pending, synced, awaiting, missing] = await Promise.all([
+    const [pending, synced, awaiting, missing, processing] = await Promise.all([
       pool.query(KPI_PENDING, [email, assignmentId]),
       pool.query(KPI_SYNCED, [email, assignmentId]),
       pool.query(KPI_AWAITING_EVAL, [email, assignmentId]),
       pool.query(KPI_MISSING, [email, assignmentId]),
+      pool.query(KPI_PROCESSING, [email, assignmentId]), // Added processing query
     ]);
 
     res.json({
@@ -36,6 +38,7 @@ router.get('/kpis', async (req, res, next) => {
       synced: parseInt(synced.rows[0]?.total || 0, 10),
       awaiting: parseInt(awaiting.rows[0]?.total || 0, 10),
       overdue: Math.max(0, parseInt(missing.rows[0]?.total || 0, 10)),
+      processing: parseInt(processing.rows[0]?.total || 0, 10), // Map processing to JSON
     });
   } catch (err) {
     next(err);

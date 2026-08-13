@@ -21,8 +21,11 @@ router.get('/', async (req, res, next) => {
       JOIN ${schema}.teams t ON a.team_id = t.team_id
       JOIN ${schema}.teacher_teams tt ON t.team_id = tt.team_id
       JOIN ${schema}.teachers th ON tt.teacher_id = th.teacher_id
-      WHERE th.ms_email = $1 AND a.is_archived = false
+      WHERE th.ms_email = $1 
+      AND a.is_archived = false
+      AND a.created_by = th.ms_id
     `;
+    
     let queryValues = [email];
 
     if (teamId) {
@@ -124,13 +127,14 @@ router.post('/sync', async (req, res, next) => {
               const totalMarks = msAssignment.grading?.maxPoints || 10;
 
               await pool.query(`
-                INSERT INTO ${schema}.assignments (assignment_id, team_id, ms_assignment_id, title, description, due_date, is_archived, rubric_context, total_marks)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                INSERT INTO ${schema}.assignments (assignment_id, team_id, ms_assignment_id, title, description, due_date, is_archived, rubric_context, total_marks, created_by)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 ON CONFLICT (assignment_id) DO UPDATE SET 
                   title = EXCLUDED.title, 
                   due_date = EXCLUDED.due_date,
                   rubric_context = EXCLUDED.rubric_context,
-                  total_marks = EXCLUDED.total_marks;
+                  total_marks = EXCLUDED.total_marks,
+                  created_by = EXCLUDED.created_by;
               `, [
                 msAssignment.id, 
                 team.team_id, 
@@ -140,7 +144,8 @@ router.post('/sync', async (req, res, next) => {
                 msAssignment.dueDateTime || null, 
                 false,
                 rubricData, 
-                totalMarks  
+                totalMarks,
+                msAssignment.createdBy?.user?.id || trueMsId // Captures the exact MS ID of the creator
               ]);
               assignmentsSynced++;
             }
