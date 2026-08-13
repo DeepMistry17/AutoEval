@@ -3,8 +3,8 @@ import { useCustom } from '@refinedev/core';
 
 interface StudentRow {
   roll_no: string;
-  prn?: string; // Added to catch the Ghost Student IDs
-  telegram_id?: string; // <-- 1. ADD THIS LINE
+  prn?: string; 
+  telegram_id?: string; 
   full_name: string;
   submission_time: string | null;
   status: string;
@@ -36,7 +36,7 @@ export const StudentSummaryTable = ({ assignmentId }: Props) => {
       key: 'roll_no',
       width: 100,
       align: 'center' as const,
-      render: (val: string | null) => val || '—', // Added fallback text
+      render: (val: string | null) => val || '—', 
     },
     {
       title: 'Name',
@@ -47,7 +47,6 @@ export const StudentSummaryTable = ({ assignmentId }: Props) => {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ marginRight: '8px' }}>{text}</span>
             
-            {/* THE FIX: Corrected the style brackets and variable check */}
             {!record.telegram_id && ( 
               <Tag color="warning" style={{ margin: 0, whiteSpace: 'nowrap' }}>
                 ⚠️ Pending Bot Setup
@@ -80,11 +79,13 @@ export const StudentSummaryTable = ({ assignmentId }: Props) => {
       width: 130,
       align: 'center' as const,
       render: (val: string) => {
+        // Using Ant Design native presets to preserve dark mode pastel styling
         const tagColors: Record<string, string> = {
           'Not Submitted': 'red',
-          Graded: 'green',
-          Synced: 'blue',
-          Pending: 'orange',
+          'Pending': 'blue',
+          'Processing': 'magenta', // Renders as pink in Ant Design
+          'Graded': 'gold',        // Renders as warm yellow
+          'Synced': 'green',
         };
         return <Tag color={tagColors[val] || 'default'}>{val}</Tag>;
       },
@@ -120,7 +121,6 @@ export const StudentSummaryTable = ({ assignmentId }: Props) => {
     <Table
       dataSource={rows}
       columns={columns}
-      // THE FIX: Smart dynamic key selection
       rowKey={(record, index) => record.roll_no || record.prn || `fallback-row-${index}`}
       loading={query.isLoading}
       pagination={{ defaultPageSize: 15, showSizeChanger: true, style: { paddingRight: '24px' } }}

@@ -83,10 +83,13 @@ export const PendingGradesTable = ({ assignmentId, onReview }: Props) => {
       width: 100,
       align: 'center' as const,
       render: (val: string) => {
+        // Using native presets for consistency
         const colorMap: Record<string, string> = {
-          Graded: 'orange',
-          Synced: 'blue',
-          Pending: 'default',
+          'Not Submitted': 'red',
+          'Pending': 'blue',
+          'Processing': 'magenta',
+          'Graded': 'gold',
+          'Synced': 'green',
         };
         return <Tag color={colorMap[val] || 'default'}>{val}</Tag>;
       },
