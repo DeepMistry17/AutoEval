@@ -24,7 +24,7 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
 
   if (!assignmentId) {
     return (
-      <Card title="AI vs Teacher: Grading Alignment" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
+      <Card title="AI grades Vs Teacher's grades" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
         <div style={{ padding: '60px 0' }}>
           <Empty description="Select an assignment to view alignment data" />
         </div>
@@ -45,7 +45,7 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
 
   if (rows.length === 0) {
     return (
-      <Card title="AI vs Teacher: Grading Alignment" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
+      <Card title="AI grades Vs Teacher's grades" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
         <Empty description="No graded data available yet" />
       </Card>
     );
@@ -55,12 +55,14 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
     {
       assignment: row.assignment,
       type: 'AI Average',
-      value: parseFloat(String(row.avg_ai)) || 0,
+      // FIX: Round to 2 decimals using toFixed(2)
+      value: Number((parseFloat(String(row.avg_ai)) || 0).toFixed(2)),
     },
     {
       assignment: row.assignment,
       type: 'Teacher Average',
-      value: parseFloat(String(row.avg_teacher)) || 0,
+      // FIX: Round to 2 decimals using toFixed(2)
+      value: Number((parseFloat(String(row.avg_teacher)) || 0).toFixed(2)),
     },
   ]);
 
@@ -71,18 +73,7 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
     seriesField: 'type',
     colorField: 'type',
     isGroup: true,
-
-    // THE NUCLEAR OVERRIDE (Raw Array)
     color: ['#0ea5e9', '#ff5a1f'],
-
-    // // THE FIRE & ICE OVERRIDE (Forced Function)
-    // color: (datum: { type: string }) => {
-    //   if (datum.type === 'AI Average') {
-    //     return '#0ea5e9'; // Bright Azure Blue
-    //   }
-    //   return '#ff5a1f'; // Blazing Neon Orange
-    // },
-    
     columnStyle: { radius: [4, 4, 0, 0] as [number, number, number, number] },
     theme: 'dark',
     label: {
@@ -108,7 +99,7 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
 
   return (
     <Card
-      title="AI vs Teacher: Grading Alignment"
+      title="AI grades Vs Teacher's grades"
       style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}
       bodyStyle={{ padding: '16px 24px' }}
     >
@@ -116,4 +107,3 @@ export const AlignmentChart = ({ assignmentId }: Props) => {
     </Card>
   );
 };
-

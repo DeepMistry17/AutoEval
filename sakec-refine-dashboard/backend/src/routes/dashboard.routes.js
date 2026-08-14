@@ -154,5 +154,95 @@ router.post('/export', async (req, res, next) => {
   }
 });
 
+/**
+ * GET /api/dashboard/ai-override?assignmentId=
+ * Returns the count of accepted vs overridden AI grades
+ */
+router.get('/ai-override', async (req, res, next) => {
+  try {
+    const assignmentId = req.query.assignmentId;
+    
+    // We check if final_marks is NULL (not reviewed yet) or matches AI marks exactly.
+    const query = `
+      SELECT 
+        COUNT(CASE WHEN final_marks IS NULL OR final_marks = ai_suggested_marks THEN 1 END) AS accepted,
+        COUNT(CASE WHEN final_marks IS NOT NULL AND final_marks != ai_suggested_marks THEN 1 END) AS overridden
+      FROM ${process.env.DB_SCHEMA || 'sakec'}.submissions
+      WHERE status IN ('Graded', 'Synced')
+        AND ($1::text IS NULL OR assignment_id = $1);
+    `;
+
+    const result = await pool.query(query, [assignmentId]);
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("? AI OVERRIDE SQL ERROR:", err.message); 
+    res.status(500).json({ error: 'Failed to fetch override data' });
+  }
+});
+
+/**
+ * GET /api/dashboard/submission-timeline?assignmentId=
+ * Returns compliance trajectory (On-Time, Late, Missing) for a stacked column chart
+ */
+router.get('/submission-timeline', async (req, res, next) => {
+  try {
+    const assignmentId = req.query.assignmentId;
+    
+    if (!assignmentId || assignmentId === 'undefined') {
+      return res.json({}); 
+    }
+
+    // Calculates On-time, Late, and Missing students for the whole cohort
+    const query = `
+      SELECT 
+        COUNT(CASE WHEN sub.is_late = false THEN 1 END) AS on_time,
+        COUNT(CASE WHEN sub.is_late = true THEN 1 END) AS late,
+        (SELECT COUNT(*) FROM ${process.env.DB_SCHEMA || 'sakec'}.team_students ts WHERE ts.team_id = a.team_id) - COUNT(sub.submission_id) AS missing
+      FROM ${process.env.DB_SCHEMA || 'sakec'}.assignments a
+      LEFT JOIN ${process.env.DB_SCHEMA || 'sakec'}.submissions sub ON a.assignment_id = sub.assignment_id
+      WHERE a.assignment_id = $1
+      GROUP BY a.team_id;
+    `;
+
+    const result = await pool.query(query, [assignmentId]);
+    
+    // Fallback safely to 0 if the query returns nothing
+    res.json(result.rows[0] || { on_time: 0, late: 0, missing: 0 });
+  } catch (err) {
+    console.error("? COMPLIANCE SQL ERROR:", err.message); 
+    res.status(500).json({ error: 'Failed to fetch compliance data' });
+  }
+});
+
+/**
+ * GET /api/dashboard/alert-readiness?assignmentId=
+ */
+router.get('/alert-readiness', async (req, res, next) => {
+  try {
+    const assignmentId = req.query.assignmentId;
+    
+    if (!assignmentId || assignmentId === 'undefined') {
+      return res.json({ linked: 0, total: 0 }); 
+    }
+
+    // FIX: NULLIF ensures empty strings aren't accidentally counted as linked accounts
+    const query = `
+      SELECT 
+        COUNT(NULLIF(TRIM(s.telegram_id), '')) AS linked,
+        COUNT(s.microsoft_id) AS total
+      FROM ${process.env.DB_SCHEMA || 'sakec'}.assignments a
+      JOIN ${process.env.DB_SCHEMA || 'sakec'}.team_students ts ON a.team_id = ts.team_id
+      JOIN ${process.env.DB_SCHEMA || 'sakec'}.students s ON ts.microsoft_id = s.microsoft_id
+      WHERE a.assignment_id = $1;
+    `;
+
+    const result = await pool.query(query, [assignmentId]);
+    res.json(result.rows[0] || { linked: 0, total: 0 });
+  } catch (err) {
+    console.error("? ALERT READINESS SQL ERROR:", err.message); 
+    res.status(500).json({ error: 'Failed to fetch alert readiness data' });
+  }
+});
 
 module.exports = router;

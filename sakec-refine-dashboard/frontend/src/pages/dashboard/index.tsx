@@ -10,6 +10,9 @@ import { StudentSummaryTable } from './components/StudentSummaryTable';
 import { ReviewModal } from './components/ReviewModal';
 import { socket } from '../../utils/socket';
 import { API_URL } from '../../config/constants';
+import { AiOverrideChart } from './components/AiOverrideChart';
+import { SubmissionTimelineChart } from './components/SubmissionTimelineChart';
+import { AlertReadinessChart } from './components/AlertReadinessChart'; // The new gauge
 
 const { Title } = Typography;
 
@@ -260,12 +263,30 @@ export const DashboardPage = () => {
         </div>
       </Card>
 
-      <Row gutter={16} style={{ marginBottom: 20 }}>
-        <Col xs={24} lg={12} key={`chart-${refreshKey}`}>
+      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
+        {/* 1. AI vs Teacher Alignment */}
+        <Col flex={1} style={{ minWidth: 220 }} key={`chart-${refreshKey}`}>
           <AlignmentChart assignmentId={selectedAssignment} />
         </Col>
-        <Col xs={24} lg={12} key={`dist-${refreshKey}`}>
+        
+        {/* 2. Score Distribution (Pie) */}
+        <Col flex={1} style={{ minWidth: 220 }} key={`dist-${refreshKey}`}>
           <ScoreDistributionChart assignmentId={selectedAssignment} />
+        </Col>
+        
+        {/* 3. Cohort Compliance (Stacked Bar) */}
+        <Col flex={1} style={{ minWidth: 220 }} key={`timeline-${refreshKey}`}>
+          <SubmissionTimelineChart assignmentId={selectedAssignment} />
+        </Col>
+        
+        {/* 4. AI Override Frequency (Pie) */}
+        <Col flex={1} style={{ minWidth: 220 }} key={`override-${refreshKey}`}>
+          <AiOverrideChart assignmentId={selectedAssignment} />
+        </Col>
+
+        {/* 5. Student Alert Readiness (Gauge) */}
+        <Col flex={1} style={{ minWidth: 220 }} key={`alert-${refreshKey}`}>
+          <AlertReadinessChart assignmentId={selectedAssignment} />
         </Col>
       </Row>
 

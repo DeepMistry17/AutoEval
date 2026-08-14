@@ -38,6 +38,7 @@ export const AppLayout = () => {
   const { data: identity } = useGetIdentity<{
     name: string;
     email: string;
+    ms_id: string;
   }>();
   const { mutate: logout } = useLogout();
   const location = useLocation();
@@ -45,6 +46,11 @@ export const AppLayout = () => {
   // ─── GLOBAL NOTIFICATION LISTENER & SMART MESSENGER ───────────────────────
   useEffect(() => {
     socket.connect();
+
+    // ─── NEW: Join Private Room ───
+    if (identity?.ms_id) {
+      socket.emit('join_room', identity.ms_id);
+    }
 
     const handleDbUpdate = (payload?: { table?: string; action?: string }) => {
       eventBatchRef.current.push({
@@ -83,7 +89,7 @@ export const AppLayout = () => {
     return () => {
       socket.off('refresh_dashboard', handleDbUpdate);
     };
-  }, []);
+  }, [identity?.ms_id]);
   // ────────────────────────────────────────────────────────────────────────────
 
   const menuItems = [

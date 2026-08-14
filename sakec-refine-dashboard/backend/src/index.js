@@ -39,6 +39,14 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log(`🟢 Dashboard connected via WebSocket: ${socket.id}`);
 
+  // ─── NEW: Listen for the frontend to request a private room ───
+  socket.on('join_room', (msId) => {
+    if (msId) {
+      socket.join(msId);
+      console.log(`🔒 Socket ${socket.id} joined private room: ${msId}`);
+    }
+  });
+
   socket.on('disconnect', () => {
     console.log(`🔴 Dashboard disconnected: ${socket.id}`);
   });

@@ -32,8 +32,13 @@ pool.setupDatabaseListener = async (io) => {
         const payload = JSON.parse(msg.payload);
         console.log(`?? DB Change Detected on table [${payload.table}] - Action: ${payload.action}`);
         
-        // Broadcast the refresh command to all connected React clients
-        io.emit('refresh_dashboard', payload);
+        // --- NEW: Route to Private Room if created_by is provided ---
+        if (payload.created_by) {
+          io.to(payload.created_by).emit('refresh_dashboard', payload);
+        } else {
+          // Fallback: If no created_by is attached, broadcast globally (for tables like teams/rosters)
+          io.emit('refresh_dashboard', payload);
+        }
       }
     });
 

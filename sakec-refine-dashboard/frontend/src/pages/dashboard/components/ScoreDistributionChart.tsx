@@ -1,5 +1,5 @@
 import { Card, Spin, Empty } from 'antd';
-import { Column } from '@ant-design/charts';
+import { Pie } from '@ant-design/charts';
 import { useCustom } from '@refinedev/core';
 
 interface StudentRow {
@@ -12,7 +12,6 @@ interface Props {
 }
 
 export const ScoreDistributionChart = ({ assignmentId }: Props) => {
-    // Using the exact endpoint from StudentSummaryTable
     const { query, result } = useCustom<StudentRow[]>({
         url: assignmentId ? `/dashboard/student-summary?assignmentId=${assignmentId}` : '/dashboard/student-summary',
         method: 'get',
@@ -24,7 +23,7 @@ export const ScoreDistributionChart = ({ assignmentId }: Props) => {
 
     if (!assignmentId) {
         return (
-            <Card title="Score Distribution" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
+            <Card title="Class Performance" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
                 <div style={{ padding: '60px 0' }}>
                     <Empty description="Select an assignment to view distribution data" />
                 </div>
@@ -43,14 +42,6 @@ export const ScoreDistributionChart = ({ assignmentId }: Props) => {
     const rawData = result?.data as unknown;
     const rows: StudentRow[] = Array.isArray(rawData) ? rawData : [];
 
-    if (rows.length === 0) {
-        return (
-            <Card title="Score Distribution" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
-                <Empty description="No graded data available yet" />
-            </Card>
-        );
-    }
-
     // Calculate Buckets
     const brackets = {
         '0-25%': 0,
@@ -60,15 +51,10 @@ export const ScoreDistributionChart = ({ assignmentId }: Props) => {
     };
 
     rows.forEach((row) => {
-        // Prefer final_marks, fallback to ai_suggested_marks
         const marks = row.final_marks ?? row.ai_suggested_marks ?? null;
-
-        // Skip students who haven't been graded yet
         if (marks === null) return;
 
-        // Assuming a max score of 10 based on your dashboard screenshot
         const max = 10;
-
         const percentage = (marks / max) * 100;
 
         if (percentage <= 25) brackets['0-25%']++;
@@ -77,42 +63,51 @@ export const ScoreDistributionChart = ({ assignmentId }: Props) => {
         else brackets['76-100%']++;
     });
 
-    const chartData = Object.entries(brackets).map(([bracket, count]) => ({
-        bracket,
-        count,
-    }));
+    const chartData = Object.entries(brackets)
+        .map(([bracket, count]) => ({ bracket, count }))
+        .filter(data => data.count > 0);
+
+    // FIX: Catch empty chart data (when students exist but aren't graded yet) to fix layout sizing
+    if (chartData.length === 0) {
+        return (
+            <Card title="Class Performance" style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}>
+                <div style={{ padding: '60px 0' }}>
+                    <Empty description="No graded data available yet" />
+                </div>
+            </Card>
+        );
+    }
 
     const config = {
+        appendPadding: 10,
         data: chartData,
-        xField: 'bracket',
-        yField: 'count',
-        color: '#8b5cf6', // Distinct purple color for the bell curve bars
-        columnStyle: { radius: [4, 4, 0, 0] as [number, number, number, number] },
+        angleField: 'count',
+        colorField: 'bracket',
+        radius: 0.85,
         theme: 'dark',
+        color: (datum: any) => {
+            if (datum.bracket === '0-25%') return '#ef4444';
+            if (datum.bracket === '26-50%') return '#f59e0b';
+            if (datum.bracket === '51-75%') return '#3b82f6';
+            return '#10b981';
+        },
         label: {
-            position: 'top' as const,
-            style: { fill: '#e5e5e5', fontSize: 12, fontWeight: 600 },
-            offsetY: 8,
+            type: 'inner',
+            offset: '-30%',
+            content: ({ percent }: any) => `${(percent * 100).toFixed(0)}%`,
+            style: { fontSize: 14, textAlign: 'center', fontWeight: 'bold', fill: '#ffffff', textShadow: '0px 2px 4px rgba(0,0,0,0.8)' },
         },
-        xAxis: {
-            label: { style: { fill: '#a3a3a3', fontSize: 11 } },
-            line: { style: { stroke: '#737373' } },
-        },
-        yAxis: {
-            title: { text: 'Number of Students', style: { fill: '#a3a3a3' } },
-            label: { style: { fill: '#737373' } },
-            grid: { line: { style: { stroke: '#262626', lineDash: [4, 4] } } },
-            line: { style: { stroke: '#737373' } },
-        },
+        legend: { position: 'bottom' as const, itemName: { style: { fill: '#d4d4d4' } } },
+        interactions: [{ type: 'element-active' }],
     };
 
     return (
         <Card
-            title="Score Distribution"
+            title="Class Performance"
             style={{ borderRadius: 12, background: '#141414', borderColor: '#262626' }}
             bodyStyle={{ padding: '16px 24px' }}
         >
-            <Column {...config} height={260} />
+            <Pie {...config} height={260} />
         </Card>
     );
 };
