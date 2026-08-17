@@ -188,6 +188,95 @@ router.patch('/:id/sync', async (req, res, next) => {
 });
 
 /**
+ * POST /api/submissions/:id/return-revision
+ * Ungraded return: Injects teacher feedback, returns via MS Graph, and unlocks local DB status.
+ */
+router.post('/:id/return-revision', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { revisionFeedback } = req.body;
+
+    if (!revisionFeedback) {
+      return res.status(400).json({ error: 'Revision feedback is required' });
+    }
+
+    // 1. Fetch metadata needed for MS Graph
+    const metaQuery = await pool.query(`
+      SELECT s.assignment_id, a.team_id 
+      FROM ${schema}.submissions s
+      JOIN ${schema}.assignments a ON s.assignment_id = a.assignment_id
+      WHERE s.submission_id = $1
+    `, [id]);
+
+    if (metaQuery.rows.length === 0) throw new Error('Submission not found');
+    const { assignment_id, team_id } = metaQuery.rows[0];
+
+    // 2. Generate MS Graph Token
+    const tokenParams = new URLSearchParams({
+      client_id: process.env.AZURE_CLIENT_ID,
+      client_secret: process.env.AZURE_CLIENT_SECRET, 
+      scope: 'https://graph.microsoft.com/.default',
+      grant_type: 'client_credentials',
+    });
+
+    const tokenRes = await fetch(`https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: tokenParams.toString()
+    });
+    
+    const tokenData = await tokenRes.json();
+    if (!tokenData.access_token) return res.status(500).json({ error: 'Token Error' });
+
+    // 3. Find the Feedback Outcome ID
+    const outcomesRes = await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes`, {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+    const outcomesData = await outcomesRes.json();
+
+    let feedbackOutcomeId = null;
+    if (outcomesData.value) {
+      const fbOutcome = outcomesData.value.find(o => o['@odata.type'] === '#microsoft.graph.educationFeedbackOutcome');
+      if (fbOutcome) feedbackOutcomeId = fbOutcome.id;
+    }
+
+    // 4. Inject Feedback into MS Teams
+    if (feedbackOutcomeId) {
+      await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/outcomes/${feedbackOutcomeId}`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          "@odata.type": "#microsoft.graph.educationFeedbackOutcome",
+          "feedback": { "text": { "content": revisionFeedback, "contentType": "text" } }
+        })
+      });
+    }
+
+    // 5. Execute Ungraded Return in MS Teams
+    await fetch(`https://graph.microsoft.com/v1.0/education/classes/${team_id}/assignments/${assignment_id}/submissions/${id}/return`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenData.access_token}` }
+    });
+
+    // 6. Update Local Database State (Unlock Row)
+    await pool.query(`
+      UPDATE ${schema}.submissions 
+      SET 
+        status = 'Revision_Requested',
+        revision_feedback = $1,
+        final_marks = NULL 
+      WHERE submission_id = $2
+    `, [revisionFeedback, id]);
+
+    res.json({ message: 'Returned for revision successfully' });
+
+  } catch (err) {
+    console.error('[REVISION RETURN ERROR]:', err);
+    next(err);
+  }
+});
+
+/**
  * POST /api/submissions/webhook/system-sync-all
  * SECURE N8N ENDPOINT: 
  * Phase 1: Sweeps all DB teams, syncs student rosters, and auto-discovers assignments.

@@ -66,24 +66,25 @@ module.exports = {
   `,
   // ─── Dashboard Data ──────────────────────────────────────────────────────────
   GET_PENDING_GRADES: `
-    SELECT
-      sub.submission_id,
-      stu.roll_no,
-      stu.full_name,
-      a.title AS assignment_title,
-      sub.ai_suggested_marks,
-      sub.ai_feedback,
-      sub.final_marks,
-      sub.status,
-      sub.file_path,
-      sub.local_converted_path
+    SELECT 
+      sub.submission_id, 
+      stu.roll_no, 
+      stu.full_name, 
+      a.title AS assignment_title, 
+      sub.ai_suggested_marks, 
+      sub.ai_feedback, 
+      sub.final_marks, 
+      sub.status, 
+      sub.file_path, 
+      sub.local_converted_path,
+      sub.revision_feedback
     FROM ${schema}.submissions sub
     JOIN ${schema}.students stu ON sub.prn = stu.prn
     JOIN ${schema}.assignments a ON sub.assignment_id = a.assignment_id
     JOIN ${schema}.teams t ON a.team_id = t.team_id
     JOIN ${schema}.teacher_teams tt ON t.team_id = tt.team_id
     JOIN ${schema}.teachers tr ON tt.teacher_id = tr.teacher_id
-    WHERE tr.MS_email = $1
+    WHERE tr.MS_email = $1 
       AND sub.status = 'Graded'
       AND ($2::text IS NULL OR a.assignment_id = $2)
       AND a.is_archived = FALSE;
@@ -106,17 +107,18 @@ module.exports = {
   `,
 
   GET_STUDENT_SUMMARY: `
-    SELECT
-      st.telegram_id,
-      st.roll_no,
-      st.prn,
-      st.full_name,
-      sub.submission_time,
-      COALESCE(sub.status, 'Not Submitted') AS status,
-      sub.is_late,
-      sub.ai_suggested_marks,
-      sub.final_marks,
-      sub.local_converted_path
+    SELECT 
+      st.telegram_id, 
+      st.roll_no, 
+      st.prn, 
+      st.full_name, 
+      sub.submission_time, 
+      COALESCE(sub.status, 'Not Submitted') AS status, 
+      sub.is_late, 
+      sub.ai_suggested_marks, 
+      sub.final_marks, 
+      sub.local_converted_path,
+      sub.revision_feedback
     FROM ${schema}.assignments a
     JOIN ${schema}.team_students ts ON a.team_id = ts.team_id
     JOIN ${schema}.students st ON ts.microsoft_id = st.microsoft_id

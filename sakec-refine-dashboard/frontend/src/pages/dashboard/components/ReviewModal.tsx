@@ -1,5 +1,5 @@
 import { Modal, Typography, Tag, Spin, Card, InputNumber, Button, message, Space, Input, Slider } from 'antd';
-import { SaveOutlined, CheckCircleOutlined, EditOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { SaveOutlined, CheckCircleOutlined, EditOutlined, CloseCircleOutlined, RollbackOutlined } from '@ant-design/icons';
 import { useEffect, useState } from 'react';
 import { API_URL } from '../../../config/constants';
 
@@ -15,6 +15,7 @@ interface SubmissionRecord {
   status: string;
   file_path: string;
   local_converted_path?: string;
+  revision_feedback?: string; 
 }
 
 interface Props {
@@ -44,7 +45,6 @@ const parseFeedback = (rawText: string) => {
     const match = line.match(/-\s*(.*?)\s*\(([\d.]+)\/([\d.]+)\):\s*(.*)/);
     if (match) {
       const comment = match[4].trim();
-      // Extract the level, defaulting to 1 if not found
       const levelMatch = comment.match(/\[Level (\d+)\]/i);
       const level = levelMatch ? parseInt(levelMatch[1], 10) : 1;
 
@@ -54,7 +54,7 @@ const parseFeedback = (rawText: string) => {
         score: parseFloat(match[2]),
         max: parseFloat(match[3]),
         comment: comment,
-        level: level // Added level property
+        level: level 
       });
     }
   });
@@ -72,21 +72,24 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
   const [isEditing, setIsEditing] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
 
-  // NEW: State for the rubric levels so they can be edited
   const [rubricBreakdown, setRubricBreakdown] = useState<any[]>([]);
+
+  // REVISION MODAL STATE
+  const [isRevisionModalOpen, setIsRevisionModalOpen] = useState(false);
+  const [revisionText, setRevisionText] = useState("");
+  const [isReturning, setIsReturning] = useState(false);
 
   useEffect(() => {
     if (open && record) {
       setEditedMark(record.final_marks ?? record.ai_suggested_marks);
 
-      // NEW: Initialize both feedback text and rubric breakdown state
       const { overall, breakdown } = parseFeedback(record.ai_feedback);
       setFeedbackText(overall || record.ai_feedback);
       setRubricBreakdown(breakdown);
 
-      // NEW: Force the modal back to read-only default state every time it opens
       setIsEditing(false);
       setConfirmAction(null);
+      setRevisionText(""); 
 
       setIsLoadingPdf(true);
       const token = sessionStorage.getItem('access_token');
@@ -129,7 +132,6 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
     try {
       const token = sessionStorage.getItem('access_token');
 
-      // ─── NEW: Send structured data to the backend ─────────────────────────
       const resp = await fetch(`${API_URL}/submissions/${record.submission_id}/sync`, {
         method: 'PATCH',
         headers: {
@@ -138,11 +140,10 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
         },
         body: JSON.stringify({
           finalMarks: editedMark,
-          overallFeedback: feedbackText,         // The general comment
-          rubricBreakdown: rubricBreakdown       // The array of levels and criteria
+          overallFeedback: feedbackText,         
+          rubricBreakdown: rubricBreakdown       
         }),
       });
-      // ──────────────────────────────────────────────────────────────────────
 
       if (!resp.ok) throw new Error('Failed to sync');
 
@@ -156,6 +157,34 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
     }
   };
 
+  const executeReturnForRevision = async () => {
+    if (!record || !revisionText.trim()) return;
+    setIsReturning(true);
+
+    try {
+      const token = sessionStorage.getItem('access_token');
+      const resp = await fetch(`${API_URL}/submissions/${record.submission_id}/return-revision`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ revisionFeedback: revisionText }),
+      });
+
+      if (!resp.ok) throw new Error('Failed to return for revision');
+
+      message.success('Assignment returned to student for revision!');
+      setIsRevisionModalOpen(false);
+      onRefresh();
+      onClose();
+    } catch {
+      message.error('Failed to return assignment');
+    } finally {
+      setIsReturning(false);
+    }
+  };
+
   const handleFeedbackAction = (action: 'accept' | 'edit' | 'clear') => {
     setConfirmAction(action);
   };
@@ -165,7 +194,6 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
       setIsEditing(true);
     } else if (confirmAction === 'clear') {
       setFeedbackText("");
-      // Optional: Clear rubric scores/comments here if desired
       setIsEditing(false);
     } else if (confirmAction === 'accept') {
       setIsEditing(false);
@@ -177,23 +205,13 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
     setConfirmAction(null);
   };
 
-  // NEW: Level-based proportional calculation handler
   const handleRubricLevelChange = (index: number, newLevel: number) => {
     const updated = [...rubricBreakdown];
     const item = updated[index];
-
-    // 1. Update the level
     item.level = newLevel;
-
-    // 2. Calculate proportional score: (Level / 4) * Max Parameter Marks
     item.score = parseFloat(((newLevel / 4) * item.max).toFixed(2));
-
-    // 3. Update the [Level X] string dynamically in the comment
     item.comment = item.comment.replace(/\[Level \d+\]/i, `[Level ${newLevel}]`);
-
     setRubricBreakdown(updated);
-
-    // 4. Recalculate total Final Override Mark
     const newTotal = updated.reduce((sum, curr) => sum + curr.score, 0);
     setEditedMark(parseFloat(newTotal.toFixed(2)));
   };
@@ -262,23 +280,42 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
               </div>
             </div>
 
-            <Button
-              type="primary"
-              icon={<SaveOutlined />}
-              size="large"
-              block
-              loading={isSaving}
-              onClick={handleSave}
-              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontWeight: 600 }}
-            >
-              Save & Sync to Teams
-            </Button>
+            {/* BUTTON WIDTH FIX: flex: 1 for both buttons */}
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                size="large"
+                loading={isSaving}
+                onClick={handleSave}
+                style={{ flex: 1, background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontWeight: 600 }}
+              >
+                Save & Sync
+              </Button>
+              <Button
+                danger
+                type="default"
+                icon={<RollbackOutlined />}
+                size="large"
+                onClick={() => setIsRevisionModalOpen(true)}
+                style={{ flex: 1, fontWeight: 600, background: 'rgba(239, 68, 68, 0.1)', borderColor: '#ef4444', color: '#ef4444' }}
+              >
+                Return
+              </Button>
+            </div>
           </div>
+
+          {/* TEXT CHANGE FIX: Changed WAITING FOR REVISION to REVISION REQUESTED */}
+          {record.revision_feedback && (
+            <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid #eab308', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <Text strong style={{ color: '#eab308', display: 'block', marginBottom: '4px' }}>REVISION REQUESTED</Text>
+              <Text style={{ color: '#fef08a' }}>{record.revision_feedback}</Text>
+            </div>
+          )}
 
           <div style={{ flex: 1 }}>
             <Text strong style={{ color: '#a3a3a3', fontSize: 13, display: 'block', marginBottom: 12 }}>RUBRIC EVALUATION</Text>
 
-            {/* NEW: Map through the state array, implementing tactile sliders for edit mode */}
             {rubricBreakdown.map((item, index) => (
               <Card key={item.key} size="small" style={{ background: '#141414', borderColor: '#262626', marginBottom: 12, borderRadius: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -293,7 +330,6 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
                         style={{ flex: 1, margin: 0 }}
                         trackStyle={{ background: '#3b82f6' }}
                       />
-                      {/* Replaced InputNumber with dynamic read-only text */}
                       <Text style={{ color: '#e5e5e5', width: '75px', textAlign: 'right', fontWeight: 600 }}>
                         {item.score.toFixed(2)}
                       </Text>
@@ -337,7 +373,6 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
               )}
 
               <Space>
-                {/* NEW: Conditional rendering for the buttons */}
                 {isEditing ? (
                   <Button onClick={() => handleFeedbackAction('accept')} size="small" icon={<CheckCircleOutlined />} style={{ color: '#10b981', borderColor: '#10b981', background: 'transparent' }}>
                     Accept
@@ -380,6 +415,54 @@ export const ReviewModal = ({ open, record, onClose, onRefresh }: Props) => {
         <Text style={{ color: '#a3a3a3' }}>
           Are you sure you want to <strong>{confirmAction}</strong> this AI feedback?
         </Text>
+      </Modal>
+
+      {/* REVISION MODAL FIX: Centered title, cleaner border, better padding */}
+      <Modal
+        title={
+          <div style={{ textAlign: 'center', width: '100%' }}>
+            <Text strong style={{ color: '#ef4444', fontSize: '18px', letterSpacing: '0.5px' }}>Revision Requested</Text>
+          </div>
+        }
+        open={isRevisionModalOpen}
+        onOk={executeReturnForRevision}
+        onCancel={() => {
+          setIsRevisionModalOpen(false);
+          setRevisionText("");
+        }}
+        okText="Confirm & Return"
+        cancelText="Cancel"
+        confirmLoading={isReturning}
+        okButtonProps={{ danger: true, style: { fontWeight: 600 } }}
+        cancelButtonProps={{ style: { color: '#a3a3a3', borderColor: '#262626', background: 'transparent' } }}
+        style={{ borderRadius: '12px', overflow: 'hidden', border: '1px solid #3f3f46' }} 
+        styles={{
+          body: { padding: '24px', background: '#18181b' }, 
+          header: { background: '#18181b', borderBottom: '1px solid #27272a', padding: '16px 24px' }
+        }}
+        closeIcon={<span style={{ color: '#71717a', fontSize: '16px' }}>✖</span>}
+        centered
+        width={450} 
+      >
+        <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+            <Text style={{ color: '#a1a1aa', fontSize: '14px' }}>
+              Provide instructions for the student. This feedback will be sent directly to their MS Teams account.
+            </Text>
+        </div>
+        <Input.TextArea
+          placeholder="E.g., You uploaded the wrong SQL file. Please upload the Python script instead."
+          value={revisionText}
+          onChange={(e) => setRevisionText(e.target.value)}
+          autoSize={{ minRows: 4, maxRows: 6 }}
+          style={{ 
+            background: '#09090b', 
+            color: '#e4e4e7', 
+            borderColor: '#27272a',
+            padding: '12px',
+            borderRadius: '8px',
+            fontSize: '14px'
+          }}
+        />
       </Modal>
 
     </Modal>
