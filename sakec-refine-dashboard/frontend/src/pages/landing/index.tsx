@@ -1826,7 +1826,7 @@ function HeroSection() {
           </div>
 
           <p className="text-white/70 text-sm sm:text-base md:text-lg leading-relaxed max-w-md mx-auto mt-6 sm:mt-8">
-            Markify unifies your complete grading workflow, so your faculty
+            Markify unifies your complete grading workflow, so the faculties
             spends less energy on repetitive assessment and more on actual
             teaching.
           </p>

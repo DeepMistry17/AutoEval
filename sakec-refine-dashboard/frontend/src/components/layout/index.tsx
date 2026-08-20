@@ -38,18 +38,18 @@ export const AppLayout = () => {
   const { data: identity } = useGetIdentity<{
     name: string;
     email: string;
-    ms_id: string;
   }>();
   const { mutate: logout } = useLogout();
   const location = useLocation();
 
   // ─── GLOBAL NOTIFICATION LISTENER & SMART MESSENGER ───────────────────────
+// ─── GLOBAL NOTIFICATION LISTENER & SMART MESSENGER ───────────────────────
   useEffect(() => {
     socket.connect();
 
-    // ─── NEW: Join Private Room ───
-    if (identity?.ms_id) {
-      socket.emit('join_room', identity.ms_id);
+    // ─── THE FIX: Join using the Email instead of the MS ID ───
+    if (identity?.email) {
+      socket.emit('join_room', identity.email);
     }
 
     const handleDbUpdate = (payload?: { table?: string; action?: string }) => {
@@ -89,14 +89,14 @@ export const AppLayout = () => {
     return () => {
       socket.off('refresh_dashboard', handleDbUpdate);
     };
-  }, [identity?.ms_id]);
+  }, [identity?.email]); // <-- Make sure this says identity?.email
   // ────────────────────────────────────────────────────────────────────────────
 
   const menuItems = [
     {
-      key: '/',
+      key: '/dashboard',
       icon: <DashboardOutlined />,
-      label: <Link to="/">Dashboard</Link>,
+      label: <Link to="/dashboard">Dashboard</Link>,
     },
     {
       key: '/teams',

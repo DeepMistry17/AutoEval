@@ -33,7 +33,7 @@ export const authProvider: AuthProvider = {
 
       return {
         success: true,
-        redirectTo: '/',
+        redirectTo: '/dashboard',
       };
     } catch (error: any) {
       return {

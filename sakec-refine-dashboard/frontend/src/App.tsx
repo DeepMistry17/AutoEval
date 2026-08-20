@@ -53,7 +53,7 @@ function App() {
               resources={[
                 {
                   name: 'dashboard',
-                  list: '/',
+                  list: '/dashboard', // <-- 1. Changed from '/' to '/dashboard'
                   meta: { label: 'Dashboard', icon: '📊' },
                 },
                 {
@@ -74,7 +74,7 @@ function App() {
             >
               <Routes>
                 {/* Public Routes */}
-                <Route path="/landing" element={<LandingPage />} />
+                <Route path="/" element={<LandingPage />} /> {/* <-- 2. Landing page is now default root */}
                 <Route path="/login" element={<LoginPage />} />
 
                 {/* Protected Dashboard Routes */}
@@ -89,7 +89,8 @@ function App() {
                     </Authenticated>
                   }
                 >
-                  <Route index element={<DashboardPage />} />
+                  {/* <-- 3. Dashboard route moved to /dashboard instead of 'index' */}
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/teams" element={<TeamsPage />} />
                   <Route path="/clearance" element={<StudentClearancePage />} />
                 </Route>
