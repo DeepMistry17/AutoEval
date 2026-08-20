@@ -11,6 +11,7 @@ import { LoginPage } from './pages/login';
 import { DashboardPage } from './pages/dashboard';
 import { TeamsPage } from './pages/teams';
 import StudentClearancePage from './pages/clearance';
+import { LandingPage } from './pages/landing';
 import { AppLayout } from './components/layout';
 
 import '@refinedev/antd/dist/reset.css';
@@ -72,8 +73,11 @@ function App() {
               }}
             >
               <Routes>
+                {/* Public Routes */}
+                <Route path="/landing" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
 
+                {/* Protected Dashboard Routes */}
                 <Route
                   element={
                     <Authenticated
